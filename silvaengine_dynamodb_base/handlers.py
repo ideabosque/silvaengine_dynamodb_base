@@ -107,7 +107,7 @@ def insert_update_decorator(
                         activity_history_funct(
                             args[0],
                             **{
-                                "id": f"{data_type}-{'-'.join(keys)}",
+                                "id": f"{data_type}-{kwargs[keys['hash_key']]}-{kwargs[keys['range_key']]}",
                                 "log": log,
                                 "type": data_type,
                             },
@@ -133,7 +133,7 @@ def insert_update_decorator(
                         activity_history_funct(
                             args[0],
                             **{
-                                "id": f"{data_type}-{'-'.join(keys)}",
+                                "id": f"{data_type}-{kwargs[keys['hash_key']]}-{kwargs[keys['range_key']]}",
                                 "log": log,
                                 "type": data_type,
                                 "data_diff": data_diff,
