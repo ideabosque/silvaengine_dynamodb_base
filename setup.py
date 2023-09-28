@@ -15,7 +15,7 @@ setup(
     include_package_data=True,
     zip_safe=False,
     platforms="Linux",
-    install_requires=["SilvaEngine-Utility", "pynamodb", "deepdiff"],
+    install_requires=["SilvaEngine-Utility", "tenacity", "pynamodb", "deepdiff"],
     classifiers=[
         "Programming Language :: Python",
         "Environment :: Web Environment",
