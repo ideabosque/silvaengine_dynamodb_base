@@ -92,7 +92,7 @@ def insert_update_decorator(
 
                 if kwargs.get(keys["range_key"]) is None:
                     kwargs[keys["range_key"]] = range_key
-                kwargs["entity"] = entity
+                kwargs.update({"entity": entity})
 
                 ## Original functoin.
                 original_function(*args, **kwargs)
@@ -224,7 +224,7 @@ def delete_decorator(
                 range_key = kwargs[keys["range_key"]]
 
                 entity = model_funct(hash_key, range_key)
-                entity.delete()
+                kwargs.update({"entity": entity})
 
                 ## Original functoin.
                 result = original_function(*args, **kwargs)
