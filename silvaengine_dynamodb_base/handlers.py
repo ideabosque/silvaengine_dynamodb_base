@@ -69,15 +69,27 @@ def insert_update_decorator(
 
                 hash_key = kwargs[keys["hash_key"]]
                 range_key = kwargs.get(keys["range_key"]) or str(uuid.uuid1().int >> 64)
+                external_id = (
+                    kwargs.get(keys["external_id"]) if keys.get("external_id") else None
+                )
 
-                count = count_funct(hash_key, range_key)
+                count = (
+                    count_funct(hash_key, range_key, external_id=external_id)
+                    if external_id
+                    else count_funct(hash_key, range_key)
+                )
 
                 entity = None
                 if count > 0:
-                    entity = model_funct(hash_key, range_key)
+                    entity = (
+                        model_funct(hash_key, range_key, external_id=external_id)
+                        if external_id
+                        else model_funct(hash_key, range_key)
+                    )
                     old_data = extract_data_for_data_diff(
                         entity, data_attributes_except_for_data_diff
                     )
+                    range_key = entity.__dict__["attribute_values"][keys["range_key"]]
 
                 ## If count == 0 and range_key_required is False and range_key is not None, raise exception "the record is not found".
                 if count == 0 and (
@@ -90,7 +102,7 @@ def insert_update_decorator(
                 action = "inserted" if count == 0 else "updated"
                 log = f"The {data_type} with the {keys['hash_key']}/{keys['range_key']} ({hash_key}/{range_key}) is {action} at {time.strftime('%X')}."
 
-                if kwargs.get(keys["range_key"]) is None:
+                if entity is None:
                     kwargs[keys["range_key"]] = range_key
                 kwargs.update({"entity": entity})
 
@@ -99,15 +111,13 @@ def insert_update_decorator(
 
                 args[0].context.get("logger").info(log)
 
-                entity = model_funct(
-                    kwargs[keys["hash_key"]], kwargs[keys["range_key"]]
-                )
+                entity = model_funct(hash_key, range_key)
                 if action == "inserted":
                     if activity_history_funct:
                         activity_history_funct(
                             args[0],
                             **{
-                                "id": f"{data_type}-{kwargs[keys['hash_key']]}-{kwargs[keys['range_key']]}",
+                                "id": f"{data_type}-{hash_key}-{range_key}",
                                 "log": log,
                                 "type": data_type,
                             },
@@ -133,7 +143,7 @@ def insert_update_decorator(
                         activity_history_funct(
                             args[0],
                             **{
-                                "id": f"{data_type}-{kwargs[keys['hash_key']]}-{kwargs[keys['range_key']]}",
+                                "id": f"{data_type}-{hash_key}-{range_key}",
                                 "log": log,
                                 "type": data_type,
                                 "data_diff": data_diff,
