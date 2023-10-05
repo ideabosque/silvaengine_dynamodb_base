@@ -120,6 +120,7 @@ def insert_update_decorator(
                                 "id": f"{data_type}-{hash_key}-{range_key}",
                                 "log": log,
                                 "type": data_type,
+                                "updated_by": kwargs.get("updated_by"),
                             },
                         )
 
@@ -147,6 +148,7 @@ def insert_update_decorator(
                                 "log": log,
                                 "type": data_type,
                                 "data_diff": data_diff,
+                                "updated_by": kwargs.get("updated_by"),
                             },
                         )
 
