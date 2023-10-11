@@ -181,23 +181,26 @@ def resolve_list_decorator(
                 limit = kwargs.get("limit", 100)
 
                 ## Original functoin.
-                query_scan_string, total, query_scan_args = original_function(
+                inquiry_funct, count_funct, inquiry_args = original_function(
                     *args, **kwargs
                 )
 
                 ## Get total by scan.
-                if total is None:
+                try:
+                    total = count_funct(*args)
+                # If no hash key but filters, it will raise exception.
+                except:
                     total = get_total_by_scan(
-                        query_scan_string, query_scan_args, attributes_to_get
+                        inquiry_funct, inquiry_args, attributes_to_get
                     )
 
                 entities = results_pagination(
                     args[0],
-                    query_scan_string,
+                    inquiry_funct,
                     total,
                     limit,
                     page_number,
-                    query_scan_args,
+                    inquiry_args,
                     attributes_to_get,
                     scan_index_forward,
                 )
