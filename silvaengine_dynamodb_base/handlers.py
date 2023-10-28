@@ -67,7 +67,7 @@ def insert_update_decorator(
                     original_function, "insert_update_", "_handler"
                 )
 
-                hash_key = kwargs[keys["hash_key"]]
+                hash_key = kwargs.get(keys["hash_key"]) or str(uuid.uuid1().int >> 64)
                 range_key = kwargs.get(keys["range_key"]) or str(uuid.uuid1().int >> 64)
                 external_id = (
                     kwargs.get(keys["external_id"]) if keys.get("external_id") else None
@@ -103,7 +103,9 @@ def insert_update_decorator(
                 log = f"The {data_type} with the {keys['hash_key']}/{keys['range_key']} ({hash_key}/{range_key}) is {action} at {time.strftime('%X')}."
 
                 if entity is None:
-                    kwargs[keys["range_key"]] = range_key
+                    kwargs.update(
+                        {keys["hash_key"]: hash_key, keys["range_key"]: range_key}
+                    )
                 kwargs.update({"entity": entity})
 
                 ## Original functoin.
