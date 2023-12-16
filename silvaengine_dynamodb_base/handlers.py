@@ -189,7 +189,7 @@ def resolve_list_decorator(
 
                 ## Get total by scan.
                 try:
-                    total = count_funct(*args)
+                    total = count_funct(*inquiry_args)
                 # If no hash key but filters, it will raise exception.
                 except:
                     total = get_total_by_scan(
