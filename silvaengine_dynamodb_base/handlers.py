@@ -56,6 +56,7 @@ def insert_update_decorator(
     count_funct=None,
     type_funct=None,
     range_key_required=False,
+    range_key_funct=None,
     data_attributes_except_for_data_diff=[],
     activity_history_funct=None,
 ):
@@ -67,8 +68,12 @@ def insert_update_decorator(
                     original_function, "insert_update_", "_handler"
                 )
 
-                hash_key = kwargs.get(keys["hash_key"]) or str(uuid.uuid1().int >> 64)
-                range_key = kwargs.get(keys["range_key"]) or str(uuid.uuid1().int >> 64)
+                hash_key = kwargs.get(keys["hash_key"])
+                range_key = kwargs.get(keys["range_key"]) or (
+                    range_key_funct()
+                    if range_key_funct
+                    else str(uuid.uuid1().int >> 64)
+                )
                 external_id = (
                     kwargs.get(keys["external_id"]) if keys.get("external_id") else None
                 )
