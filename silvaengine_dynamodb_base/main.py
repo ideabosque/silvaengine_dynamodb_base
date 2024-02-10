@@ -24,7 +24,11 @@ class SilvaEngineDynamoDBBase(object):
 
     def graphql_execute(self, schema, **params):
         try:
-            context = {"logger": self.logger, "setting": self.setting}
+            context = {
+                "logger": self.logger,
+                "setting": self.setting,
+                "endpoint_id": params.get("endpoint_id"),
+            }
             variables = params.get("variables", {})
             query = params.get("query")
             operation_name = params.get("operation_name")
