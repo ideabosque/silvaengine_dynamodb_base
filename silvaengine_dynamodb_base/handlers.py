@@ -4,10 +4,17 @@ from __future__ import print_function
 
 __author__ = "bibow"
 
-import functools, uuid, traceback, time, math, inspect
+import functools
+import inspect
+import math
+import time
+import traceback
+import uuid
+
 from deepdiff import DeepDiff
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from silvaengine_utility import Utility
-from tenacity import retry, wait_exponential, stop_after_attempt
 
 extract_data_for_data_diff = (
     lambda x, data_attributes_except_for_data_diff: Utility.json_loads(
@@ -70,7 +77,7 @@ def insert_update_decorator(
 
                 hash_key = kwargs.get(keys["hash_key"])
                 range_key = kwargs.get(keys["range_key"]) or (
-                    range_key_funct()
+                    range_key_funct(args[0], **kwargs)
                     if range_key_funct
                     else str(uuid.uuid1().int >> 64)
                 )
@@ -160,10 +167,10 @@ def insert_update_decorator(
                         )
 
                 return type_funct(args[0], entity)
-            except:
+            except Exception as e:
                 log = traceback.format_exc()
-                args[0].context.get("logger").exception(log)
-                raise
+                args[0].context.get("logger").error(log)
+                raise e
 
         return wrapper_function
 
@@ -222,10 +229,10 @@ def resolve_list_decorator(
                         "total": total,
                     }
                 )
-            except:
+            except Exception as e:
                 log = traceback.format_exc()
-                args[0].context.get("logger").exception(log)
-                raise
+                args[0].context.get("logger").error(log)
+                raise e
 
         return wrapper_function
 
@@ -255,10 +262,10 @@ def delete_decorator(
                     f"The {data_type} with the {keys['hash_key']}/{keys['range_key']} ({hash_key}/{range_key}) is deleted at {time.strftime('%X')}."
                 )
                 return result
-            except:
+            except Exception as e:
                 log = traceback.format_exc()
-                args[0].context.get("logger").exception(log)
-                raise
+                args[0].context.get("logger").error(log)
+                raise e
 
         return wrapper_function
 
