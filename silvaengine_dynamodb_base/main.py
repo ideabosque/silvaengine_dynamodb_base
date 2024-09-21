@@ -5,6 +5,7 @@ from __future__ import print_function
 __author__ = "bibow"
 
 from silvaengine_utility import Utility
+
 from .models import BaseModel
 
 
@@ -29,6 +30,9 @@ class SilvaEngineDynamoDBBase(object):
                 "setting": self.setting,
                 "endpoint_id": params.get("endpoint_id"),
             }
+            if params.get("context"):
+                context = dict(context, **params["context"])
+
             variables = params.get("variables", {})
             query = params.get("query")
             operation_name = params.get("operation_name")
