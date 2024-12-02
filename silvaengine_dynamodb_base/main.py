@@ -31,6 +31,8 @@ class SilvaEngineDynamoDBBase(object):
                 "endpoint_id": params.get("endpoint_id"),
                 "connectionId": params.get("connection_id"),
             }
+            self.logger.info(f"context: {context}")
+            self.logger.info(f"params: {params}")
             if params.get("context"):
                 context = dict(context, **params["context"])
 
