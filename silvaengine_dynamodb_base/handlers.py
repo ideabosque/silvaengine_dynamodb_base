@@ -182,14 +182,14 @@ def resolve_list_decorator(
     list_type_class=None,
     type_funct=None,
     scan_index_forward=None,
+    prefix="resolve_",
+    suffix="_list_handler",
 ):
     def actual_decorator(original_function):
         @functools.wraps(original_function)
         def wrapper_function(*args, **kwargs):
             try:
-                data_type = get_data_type(
-                    original_function, "resolve_", "_list_handler"
-                )
+                data_type = get_data_type(original_function, prefix, suffix)
 
                 page_number = kwargs.get("page_number", 1)
                 limit = kwargs.get("limit", 100)
