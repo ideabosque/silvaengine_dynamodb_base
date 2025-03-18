@@ -75,7 +75,9 @@ def insert_update_decorator(
                     original_function, "insert_update_", "_handler"
                 )
 
-                hash_key = kwargs.get(keys["hash_key"])
+                hash_key = kwargs.get(keys["hash_key"]) or args[0].context.get(
+                    keys["hash_key"]
+                )
                 range_key = kwargs.get(keys["range_key"]) or (
                     range_key_funct(args[0], **kwargs)
                     if range_key_funct
@@ -256,7 +258,9 @@ def delete_decorator(
             try:
                 data_type = get_data_type(original_function, "delete_", "_handler")
 
-                hash_key = kwargs[keys["hash_key"]]
+                hash_key = kwargs.get(keys["hash_key"]) or args[0].context.get(
+                    keys["hash_key"]
+                )
                 range_key = kwargs[keys["range_key"]]
 
                 entity = model_funct(hash_key, range_key)
