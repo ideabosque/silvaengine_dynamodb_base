@@ -81,7 +81,7 @@ def insert_update_decorator(
                 range_key = kwargs.get(keys["range_key"]) or (
                     range_key_funct(args[0], **kwargs)
                     if range_key_funct
-                    else str(uuid.uuid1().int >> 64)
+                    else f"{uuid.uuid1().int % (10**20):020d}"
                 )
                 external_id = (
                     kwargs.get(keys["external_id"]) if keys.get("external_id") else None
