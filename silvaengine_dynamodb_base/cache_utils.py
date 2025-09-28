@@ -40,7 +40,9 @@ class CacheConfigResolvers:
     """Callable helpers that provide cache configuration metadata."""
 
     get_cache_entity_config: Optional[Callable[[], Dict[str, Dict[str, Any]]]] = None
-    get_cache_relationships: Optional[Callable[[], Dict[str, List[Dict[str, Any]]]]] = None
+    get_cache_relationships: Optional[Callable[[], Dict[str, List[Dict[str, Any]]]]] = (
+        None
+    )
     queries_module_base: Optional[str] = None
 
 
@@ -56,13 +58,31 @@ class CascadingCachePurger:
         logger: logging.Logger,
         entity_type: str,
         *,
-        context_id: Optional[str] = None,
+        context_keys: Optional[Dict[str, Any]] = None,
         entity_keys: Optional[Dict[str, Any]] = None,
         cascade_depth: int = 3,
     ) -> Dict[str, Any]:
+        """
+        Purge entity cache and cascade to related entities.
+
+        Args:
+            logger: Logger instance
+            entity_type: Type of entity to purge
+            context_keys: Context information (e.g., {"tenant_id": "abc123"})
+            entity_keys: Entity-specific keys for cache resolution
+            cascade_depth: Maximum depth for cascading purges
+        """
+        # Merge context_keys into entity_keys for unified resolution
+        merged_keys = {}
+        if context_keys:
+            merged_keys.update(context_keys)
+        if entity_keys:
+            merged_keys.update(entity_keys)
+
         purge_results = {
             "entity_type": entity_type,
-            "entity_keys": entity_keys,
+            "entity_keys": merged_keys,
+            "context_keys": context_keys,
             "individual_cache_cleared": False,
             "list_cache_cleared": False,
             "cascaded_levels": [],
@@ -72,13 +92,12 @@ class CascadingCachePurger:
         }
 
         try:
-            if entity_keys:
+            if merged_keys:
                 try:
                     individual_result = self._clear_individual_entity_cache(
                         logger,
                         entity_type,
-                        context_id,
-                        entity_keys,
+                        merged_keys,
                     )
                     purge_results["individual_cache_cleared"] = individual_result
                 except Exception as exc:
@@ -97,8 +116,8 @@ class CascadingCachePurger:
             cascade_result = self._cascade_purge_child_caches(
                 logger,
                 parent_entity_type=entity_type,
-                context_id=context_id,
-                entity_keys=entity_keys,
+                context_keys=context_keys,
+                entity_keys=merged_keys,
                 cascade_depth=cascade_depth,
             )
             purge_results["cascaded_levels"] = cascade_result["cascaded_levels"]
@@ -113,11 +132,10 @@ class CascadingCachePurger:
             purge_results["errors"].append(
                 f"Error in purge_entity_cascading_cache: {str(exc)}"
             )
-            if logger:
-                logger.error(
-                    "Error in purge_entity_cascading_cache: %s",
-                    str(exc),
-                )
+            logger.error(
+                "Error in purge_entity_cascading_cache: %s",
+                str(exc),
+            )
 
         return purge_results
 
@@ -125,45 +143,44 @@ class CascadingCachePurger:
         self,
         logger: logging.Logger,
         entity_type: str,
-        context_id: Optional[str],
         entity_keys: Dict[str, Any],
     ) -> bool:
+        """Clear individual entity cache using only entity_keys."""
         try:
             meta = self._get_entity_meta(entity_type)
-            if meta is None or meta.getter is None or not hasattr(meta.getter, "cache_delete"):
-                if logger:
-                    logger.debug(
-                        "Cache delete not configured for entity_type=%s",
-                        entity_type,
-                    )
+            if (
+                meta is None
+                or meta.getter is None
+                or not hasattr(meta.getter, "cache_delete")
+            ):
+                logger.debug(
+                    "Cache delete not configured for entity_type=%s",
+                    entity_type,
+                )
                 return False
 
             cache_args = self._resolve_cache_args(
                 meta,
-                endpoint_id=context_id,
                 entity_keys=entity_keys,
             )
             if not cache_args:
-                if logger:
-                    logger.debug(
-                        "Unable to resolve cache keys for entity_type=%s using keys=%s",
-                        entity_type,
-                        entity_keys,
-                    )
+                logger.debug(
+                    "Unable to resolve cache keys for entity_type=%s using keys=%s",
+                    entity_type,
+                    entity_keys,
+                )
                 return False
 
             meta.getter.cache_delete(*cache_args)
-            if logger:
-                logger.info("Cleared individual %s cache", entity_type)
+            logger.info("Cleared individual %s cache", entity_type)
             return True
 
         except Exception as exc:
-            if logger:
-                logger.error(
-                    "Error clearing individual %s cache: %s",
-                    entity_type,
-                    str(exc),
-                )
+            logger.error(
+                "Error clearing individual %s cache: %s",
+                entity_type,
+                str(exc),
+            )
         return False
 
     def _clear_entity_list_cache(
@@ -181,19 +198,19 @@ class CascadingCachePurger:
                 if module_path:
                     try:
                         resolver_module = import_module(module_path)
-                        list_resolver = getattr(resolver_module, list_resolver_name, None)
+                        list_resolver = getattr(
+                            resolver_module, list_resolver_name, None
+                        )
                     except ImportError:
                         list_resolver = None
 
             if list_resolver and hasattr(list_resolver, "cache_clear"):
                 list_resolver.cache_clear()
-                if logger:
-                    logger.info("Cleared %s list cache", entity_type)
+                logger.info("Cleared %s list cache", entity_type)
                 return True
 
         except Exception as exc:
-            if logger:
-                logger.error("Error clearing %s list cache: %s", entity_type, str(exc))
+            logger.error("Error clearing %s list cache: %s", entity_type, str(exc))
 
         return False
 
@@ -201,7 +218,7 @@ class CascadingCachePurger:
         self,
         logger: logging.Logger,
         parent_entity_type: str,
-        context_id: Optional[str] = None,
+        context_keys: Optional[Dict[str, Any]] = None,
         entity_keys: Optional[Dict[str, Any]] = None,
         cascade_depth: int = 3,
     ) -> Dict[str, Any]:
@@ -256,7 +273,11 @@ class CascadingCachePurger:
                     dependency_key = child.get("dependency_key")
 
                     try:
-                        if not module_name or not resolver_name or not child_entity_type:
+                        if (
+                            not module_name
+                            or not resolver_name
+                            or not child_entity_type
+                        ):
                             raise ValueError(
                                 f"Incomplete cache relationship for parent {current_entity}: {child}"
                             )
@@ -277,24 +298,23 @@ class CascadingCachePurger:
                             )
                             cascade_results["total_caches_cleared"] += 1
 
-                            if logger:
-                                logger.info(
-                                    "L%s: Cleared %s list cache (child of %s)",
-                                    current_level,
-                                    child_entity_type,
-                                    current_entity,
-                                )
+                            logger.info(
+                                "L%s: Cleared %s list cache (child of %s)",
+                                current_level,
+                                child_entity_type,
+                                current_entity,
+                            )
 
                         if (
                             current_level == 0
                             and entity_keys
-                            and context_id is not None
+                            and context_keys is not None
                         ):
                             individual_count = self._clear_individual_child_entities(
                                 logger,
                                 current_entity,
                                 child,
-                                context_id,
+                                context_keys,
                                 entity_keys,
                             )
                             if individual_count > 0:
@@ -336,11 +356,10 @@ class CascadingCachePurger:
             cascade_results["errors"].append(
                 f"Error in _cascade_purge_child_caches_universal: {str(exc)}"
             )
-            if logger:
-                logger.error(
-                    "Error in _cascade_purge_child_caches_universal: %s",
-                    str(exc),
-                )
+            logger.error(
+                "Error in _cascade_purge_child_caches_universal: %s",
+                str(exc),
+            )
 
         return cascade_results
 
@@ -349,7 +368,7 @@ class CascadingCachePurger:
         logger: logging.Logger,
         parent_entity_type: str,
         child_config: Dict[str, Any],
-        context_id: Optional[str],
+        context_keys: Optional[Dict[str, Any]],
         parent_entity_keys: Optional[Dict[str, Any]],
     ) -> int:
         cleared_count = 0
@@ -366,23 +385,25 @@ class CascadingCachePurger:
         parent_key_value = (parent_entity_keys or {}).get(parent_key_name)
 
         if not _has_value(parent_key_value):
-            if logger:
-                logger.debug(
-                    "No parent key value found for %s in %s entity keys: %s",
-                    parent_key_name,
-                    parent_entity_type,
-                    parent_entity_keys,
-                )
+            logger.debug(
+                "No parent key value found for %s in %s entity keys: %s",
+                parent_key_name,
+                parent_entity_type,
+                parent_entity_keys,
+            )
             return 0
 
         meta = self._get_entity_meta(child_entity_type)
-        if meta is None or meta.getter is None or not hasattr(meta.getter, "cache_delete"):
-            if logger:
-                logger.debug(
-                    "Cache metadata missing for child entity %s (parent %s)",
-                    child_entity_type,
-                    parent_entity_type,
-                )
+        if (
+            meta is None
+            or meta.getter is None
+            or not hasattr(meta.getter, "cache_delete")
+        ):
+            logger.debug(
+                "Cache metadata missing for child entity %s (parent %s)",
+                child_entity_type,
+                parent_entity_type,
+            )
             return 0
 
         child_model_class = meta.model_class
@@ -394,12 +415,11 @@ class CascadingCachePurger:
                 child_model_class = None
 
         if child_model_class is None:
-            if logger:
-                logger.warning(
-                    "Could not load model class for %s when clearing %s children",
-                    child_entity_type,
-                    parent_entity_type,
-                )
+            logger.warning(
+                "Could not load model class for %s when clearing %s children",
+                child_entity_type,
+                parent_entity_type,
+            )
             return 0
 
         if isinstance(parent_key_value, (list, tuple, set)):
@@ -411,7 +431,9 @@ class CascadingCachePurger:
         seen_values = set()
 
         for raw_value in parent_values:
-            normalized_value = raw_value.strip() if isinstance(raw_value, str) else raw_value
+            normalized_value = (
+                raw_value.strip() if isinstance(raw_value, str) else raw_value
+            )
             if not _has_value(normalized_value):
                 continue
 
@@ -426,7 +448,7 @@ class CascadingCachePurger:
                 cleared_for_value = self._direct_clear_child_cache(
                     logger,
                     meta,
-                    context_id,
+                    context_keys,
                     normalized_value,
                 )
             else:
@@ -436,7 +458,7 @@ class CascadingCachePurger:
                     child_model_class=child_model_class,
                     dependency_key=dependency_key,
                     parent_key_value=normalized_value,
-                    context_id=context_id,
+                    context_keys=context_keys,
                     parent_entity_type=parent_entity_type,
                 )
 
@@ -451,16 +473,15 @@ class CascadingCachePurger:
         child_model_class: Any,
         dependency_key: Optional[str],
         parent_key_value: Any,
-        context_id: Optional[str],
+        context_keys: Optional[Dict[str, Any]],
         parent_entity_type: str = "unknown",
     ) -> int:
         if meta.getter is None or not hasattr(meta.getter, "cache_delete"):
-            if logger:
-                logger.debug(
-                    "Cache delete not available for child entity %s (parent %s)",
-                    meta.entity_type,
-                    parent_entity_type,
-                )
+            logger.debug(
+                "Cache delete not available for child entity %s (parent %s)",
+                meta.entity_type,
+                parent_entity_type,
+            )
             return 0
 
         cleared_count = 0
@@ -473,41 +494,53 @@ class CascadingCachePurger:
                         index = getattr(child_model_class, index_name)
                         entities = None
 
-                        if hasattr(child_model_class, "endpoint_id") and _has_value(context_id):
+                        # Try context-aware query using the first context key found
+                        context_value = None
+                        context_attr = None
+                        if context_keys:
+                            for attr_name, attr_value in context_keys.items():
+                                if hasattr(child_model_class, attr_name) and _has_value(
+                                    attr_value
+                                ):
+                                    context_value = attr_value
+                                    context_attr = attr_name
+                                    break
+
+                        if context_value is not None and context_attr is not None:
                             try:
                                 entities = index.query(
-                                    context_id,
-                                    getattr(child_model_class, dependency_key) == parent_key_value,
+                                    context_value,
+                                    getattr(child_model_class, dependency_key)
+                                    == parent_key_value,
                                 )
                             except Exception as pattern_exc:
-                                if logger:
-                                    logger.debug(
-                                        "Pattern 1 (endpoint_id + %s) failed for %s->%s: %s",
-                                        dependency_key,
-                                        parent_entity_type,
-                                        meta.entity_type,
-                                        str(pattern_exc),
-                                    )
+                                logger.debug(
+                                    "Pattern 1 (%s + %s) failed for %s->%s: %s",
+                                    context_attr,
+                                    dependency_key,
+                                    parent_entity_type,
+                                    meta.entity_type,
+                                    str(pattern_exc),
+                                )
 
                         if entities is None:
                             try:
                                 entities = index.query(parent_key_value)
                             except Exception as pattern_exc:
-                                if logger:
-                                    logger.debug(
-                                        "Pattern 2 (direct %s) failed for %s->%s: %s",
-                                        dependency_key,
-                                        parent_entity_type,
-                                        meta.entity_type,
-                                        str(pattern_exc),
-                                    )
+                                logger.debug(
+                                    "Pattern 2 (direct %s) failed for %s->%s: %s",
+                                    dependency_key,
+                                    parent_entity_type,
+                                    meta.entity_type,
+                                    str(pattern_exc),
+                                )
 
                         if entities is not None:
                             cleared_count = self._clear_entities_cache(
                                 logger,
                                 entities,
                                 meta=meta,
-                                context_id=context_id,
+                                context_keys=context_keys,
                             )
 
                             if logger and cleared_count > 0:
@@ -523,14 +556,13 @@ class CascadingCachePurger:
                                 return cleared_count
 
                     except Exception as exc:
-                        if logger:
-                            logger.warning(
-                                "Error using %s for %s->%s: %s",
-                                index_name,
-                                parent_entity_type,
-                                meta.entity_type,
-                                str(exc),
-                            )
+                        logger.warning(
+                            "Error using %s for %s->%s: %s",
+                            index_name,
+                            parent_entity_type,
+                            meta.entity_type,
+                            str(exc),
+                        )
 
             if hasattr(child_model_class, "query"):
                 try:
@@ -543,7 +575,7 @@ class CascadingCachePurger:
                         logger,
                         entities,
                         meta=meta,
-                        context_id=context_id,
+                        context_keys=context_keys,
                     )
 
                     if logger and cleared_count > 0:
@@ -558,15 +590,18 @@ class CascadingCachePurger:
                         return cleared_count
 
                 except Exception as exc:
-                    if logger:
-                        logger.warning(
-                            "Error using direct query for %s->%s: %s",
-                            parent_entity_type,
-                            meta.entity_type,
-                            str(exc),
-                        )
+                    logger.warning(
+                        "Error using direct query for %s->%s: %s",
+                        parent_entity_type,
+                        meta.entity_type,
+                        str(exc),
+                    )
 
-            attribute = getattr(child_model_class, dependency_key, None) if dependency_key else None
+            attribute = (
+                getattr(child_model_class, dependency_key, None)
+                if dependency_key
+                else None
+            )
             if attribute is not None:
                 try:
                     if hasattr(attribute, "contains"):
@@ -574,17 +609,24 @@ class CascadingCachePurger:
                     else:
                         attr_condition = attribute == parent_key_value
 
-                    if _has_value(context_id) and hasattr(child_model_class, "endpoint_id"):
-                        attr_condition = (
-                            child_model_class.endpoint_id == context_id
-                        ) & attr_condition
+                    # Add context condition if available
+                    if context_keys:
+                        for attr_name, attr_value in context_keys.items():
+                            if hasattr(child_model_class, attr_name) and _has_value(
+                                attr_value
+                            ):
+                                context_condition = (
+                                    getattr(child_model_class, attr_name) == attr_value
+                                )
+                                attr_condition = context_condition & attr_condition
+                                break
 
                     entities = child_model_class.scan(attr_condition)
                     cleared_count = self._clear_entities_cache(
                         logger,
                         entities,
                         meta=meta,
-                        context_id=context_id,
+                        context_keys=context_keys,
                     )
 
                     if logger and cleared_count > 0:
@@ -599,23 +641,21 @@ class CascadingCachePurger:
                         return cleared_count
 
                 except Exception as exc:
-                    if logger:
-                        logger.warning(
-                            "Error using scan for %s->%s with dependency %s: %s",
-                            parent_entity_type,
-                            meta.entity_type,
-                            dependency_key,
-                            str(exc),
-                        )
+                    logger.warning(
+                        "Error using scan for %s->%s with dependency %s: %s",
+                        parent_entity_type,
+                        meta.entity_type,
+                        dependency_key,
+                        str(exc),
+                    )
 
         except Exception as exc:
-            if logger:
-                logger.error(
-                    "Error in _query_and_clear_child_entities for %s->%s: %s",
-                    parent_entity_type,
-                    meta.entity_type,
-                    str(exc),
-                )
+            logger.error(
+                "Error in _query_and_clear_child_entities for %s->%s: %s",
+                parent_entity_type,
+                meta.entity_type,
+                str(exc),
+            )
 
         return cleared_count
 
@@ -623,50 +663,58 @@ class CascadingCachePurger:
         self,
         logger: logging.Logger,
         meta: CacheEntityMeta,
-        context_id: Optional[str],
+        context_keys: Optional[Dict[str, Any]],
         child_identifier: Any,
     ) -> int:
         if not _has_value(child_identifier):
             return 0
 
         if meta.getter is None or not hasattr(meta.getter, "cache_delete"):
-            if logger:
-                logger.debug(
-                    "Direct clear skipped; cache_delete missing for %s",
-                    meta.entity_type,
-                )
+            logger.debug(
+                "Direct clear skipped; cache_delete missing for %s",
+                meta.entity_type,
+            )
             return 0
+
+        # Build entity_keys from context_keys and identifier
+        entity_keys = {}
+        if context_keys:
+            entity_keys.update(context_keys)
+
+        # Add the identifier to appropriate key based on cache_keys configuration
+        for cache_key in meta.cache_keys:
+            if cache_key.startswith("key:"):
+                key_name = cache_key[4:]
+                entity_keys[key_name] = child_identifier
+                break
 
         cache_args = self._resolve_cache_args(
             meta,
-            endpoint_id=context_id,
+            entity_keys=entity_keys,
             identifier=child_identifier,
         )
         if not cache_args:
-            if logger:
-                logger.debug(
-                    "Unable to resolve cache keys for direct clear of %s using identifier %s",
-                    meta.entity_type,
-                    child_identifier,
-                )
+            logger.debug(
+                "Unable to resolve cache keys for direct clear of %s using identifier %s",
+                meta.entity_type,
+                child_identifier,
+            )
             return 0
 
         try:
             meta.getter.cache_delete(*cache_args)
-            if logger:
-                logger.info(
-                    "Directly cleared %s cache for identifier %s",
-                    meta.entity_type,
-                    child_identifier,
-                )
+            logger.info(
+                "Directly cleared %s cache for identifier %s",
+                meta.entity_type,
+                child_identifier,
+            )
             return 1
         except Exception as exc:
-            if logger:
-                logger.debug(
-                    "Direct cache delete failed for %s: %s",
-                    meta.entity_type,
-                    str(exc),
-                )
+            logger.debug(
+                "Direct cache delete failed for %s: %s",
+                meta.entity_type,
+                str(exc),
+            )
         return 0
 
     def _clear_entities_cache(
@@ -674,19 +722,17 @@ class CascadingCachePurger:
         logger: logging.Logger,
         entities: Any,
         meta: CacheEntityMeta,
-        context_id: Optional[str],
+        context_keys: Optional[Dict[str, Any]],
     ) -> int:
         if meta.getter is None or not hasattr(meta.getter, "cache_delete"):
-            if logger:
-                logger.debug(
-                    "Cache delete not available when clearing %s entities",
-                    meta.entity_type,
-                )
+            logger.debug(
+                "Cache delete not available when clearing %s entities",
+                meta.entity_type,
+            )
             return 0
 
         if entities is None:
-            if logger:
-                logger.debug("No entities found for %s", meta.entity_type)
+            logger.debug("No entities found for %s", meta.entity_type)
             return 0
 
         if not hasattr(entities, "__iter__") or isinstance(entities, (str, bytes)):
@@ -695,43 +741,53 @@ class CascadingCachePurger:
         cleared_count = 0
 
         for entity in entities:
-            local_context_id = context_id
-            if not _has_value(local_context_id) and hasattr(entity, "endpoint_id"):
-                local_context_id = getattr(entity, "endpoint_id")
+            # Build entity_keys from context_keys and entity attributes
+            entity_keys = {}
+            if context_keys:
+                entity_keys.update(context_keys)
+
+            # Extract entity attributes based on cache_keys configuration
+            for cache_key in meta.cache_keys:
+                if cache_key.startswith("key:"):
+                    attr_name = cache_key[4:]
+                    if hasattr(entity, attr_name):
+                        entity_keys[attr_name] = getattr(entity, attr_name)
+                elif cache_key.startswith("context:"):
+                    context_attr = cache_key[8:]
+                    if hasattr(entity, context_attr):
+                        entity_keys[context_attr] = getattr(entity, context_attr)
 
             cache_args = self._resolve_cache_args(
                 meta,
-                endpoint_id=local_context_id,
+                entity_keys=entity_keys,
                 entity=entity,
             )
             if not cache_args:
-                if logger:
-                    entity_descriptor = getattr(entity, "id", None)
-                    if not _has_value(entity_descriptor) and meta.cache_keys:
-                        token = meta.cache_keys[0]
-                        if token.startswith("key:"):
-                            entity_descriptor = getattr(entity, token[4:], None)
-                        elif token.startswith("attr:"):
-                            entity_descriptor = getattr(entity, token[5:], None)
-                    if not _has_value(entity_descriptor):
-                        entity_descriptor = repr(entity)
-                    logger.debug(
-                        "Unable to resolve cache args for %s entity %s",
-                        meta.entity_type,
-                        entity_descriptor,
-                    )
+                entity_descriptor = getattr(entity, "id", None)
+                if not _has_value(entity_descriptor) and meta.cache_keys:
+                    token = meta.cache_keys[0]
+                    if token.startswith("key:"):
+                        entity_descriptor = getattr(entity, token[4:], None)
+                    elif token.startswith("attr:"):
+                        entity_descriptor = getattr(entity, token[5:], None)
+                if not _has_value(entity_descriptor):
+                    entity_descriptor = repr(entity)
+                logger.debug(
+                    "Unable to resolve cache args for %s entity %s",
+                    meta.entity_type,
+                    entity_descriptor,
+                )
                 continue
 
             try:
                 meta.getter.cache_delete(*cache_args)
                 cleared_count += 1
             except Exception as exc:
-                if logger:
-                    logger.warning(
-                        "Error clearing cache for %s entity: %s",
-                        meta.entity_type,
-                        str(exc),
-                    )
+                logger.warning(
+                    "Error clearing cache for %s entity: %s",
+                    meta.entity_type,
+                    str(exc),
+                )
 
         return cleared_count
 
@@ -739,11 +795,11 @@ class CascadingCachePurger:
         self,
         meta: Optional[CacheEntityMeta],
         *,
-        endpoint_id: Optional[str] = None,
         entity_keys: Optional[Dict[str, Any]] = None,
         entity: Any = None,
         identifier: Any = None,
     ) -> Optional[List[Any]]:
+        """Resolve cache arguments using only generic parameters."""
         if meta is None:
             return None
 
@@ -751,7 +807,6 @@ class CascadingCachePurger:
         for token in meta.cache_keys:
             value = self._resolve_cache_token(
                 token=token,
-                endpoint_id=endpoint_id,
                 entity_keys=entity_keys,
                 entity=entity,
                 identifier=identifier,
@@ -766,46 +821,81 @@ class CascadingCachePurger:
         self,
         *,
         token: str,
-        endpoint_id: Optional[str],
-        entity_keys: Optional[Dict[str, Any]],
-        entity: Any,
-        identifier: Any,
+        entity_keys: Optional[Dict[str, Any]] = None,
+        entity: Any = None,
+        identifier: Any = None,
     ) -> Any:
-        if token == "endpoint_id":
-            if _has_value(endpoint_id):
-                return endpoint_id
-            if entity is not None and hasattr(entity, "endpoint_id"):
-                candidate = getattr(entity, "endpoint_id")
-                if _has_value(candidate):
-                    return candidate
-            if entity_keys and _has_value(entity_keys.get("endpoint_id")):
-                return entity_keys.get("endpoint_id")
-            return None
+        """
+        Resolve cache token values from available sources.
+
+        Args:
+            token: Token to resolve (e.g., "context:tenant_id", "key:uuid")
+            entity_keys: Dictionary of key-value pairs for resolution
+            entity: Entity object with attributes
+            identifier: Direct identifier value
+        """
+
+        # Handle context tokens
+        if token.startswith("context:"):
+            context_attribute = token[8:]  # Remove "context:" prefix
+            return self._resolve_attribute_value(
+                attribute_name=context_attribute,
+                entity_keys=entity_keys,
+                entity=entity,
+            )
+
+        # Handle identifier token
         if token == "identifier":
             return identifier if _has_value(identifier) else None
+
+        # Handle key tokens
         if token.startswith("key:"):
             key_name = token[4:]
-            if entity_keys and _has_value(entity_keys.get(key_name)):
-                return entity_keys.get(key_name)
-            if entity is not None and hasattr(entity, key_name):
-                candidate = getattr(entity, key_name)
-                if _has_value(candidate):
-                    return candidate
-            if _has_value(identifier):
-                return identifier
-            return None
+            return self._resolve_attribute_value(
+                attribute_name=key_name,
+                entity_keys=entity_keys,
+                entity=entity,
+                identifier=identifier,
+            )
+
+        # Handle attr tokens
         if token.startswith("attr:"):
             attr_name = token[5:]
-            if entity is not None and hasattr(entity, attr_name):
-                candidate = getattr(entity, attr_name)
-                if _has_value(candidate):
-                    return candidate
-            if entity_keys and _has_value(entity_keys.get(attr_name)):
-                return entity_keys.get(attr_name)
-            if _has_value(identifier):
-                return identifier
-            return None
+            return self._resolve_attribute_value(
+                attribute_name=attr_name,
+                entity_keys=entity_keys,
+                entity=entity,
+                identifier=identifier,
+            )
+
+        # Return literal token as-is
         return token
+
+    def _resolve_attribute_value(
+        self,
+        *,
+        attribute_name: str,
+        entity_keys: Optional[Dict[str, Any]] = None,
+        entity: Any = None,
+        identifier: Any = None,
+    ) -> Any:
+        """Generic attribute value resolution."""
+
+        # Try from entity_keys dictionary (highest priority)
+        if entity_keys and _has_value(entity_keys.get(attribute_name)):
+            return entity_keys.get(attribute_name)
+
+        # Try from entity object
+        if entity is not None and hasattr(entity, attribute_name):
+            candidate = getattr(entity, attribute_name)
+            if _has_value(candidate):
+                return candidate
+
+        # Use identifier as fallback for key: and attr: tokens
+        if identifier is not None and _has_value(identifier):
+            return identifier
+
+        return None
 
     def _get_entity_meta(self, entity_type: str) -> Optional[CacheEntityMeta]:
         meta = self._entity_registry.get(entity_type)
