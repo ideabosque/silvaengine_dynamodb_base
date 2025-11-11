@@ -4,7 +4,7 @@ from __future__ import print_function
 
 __author__ = "bibow"
 
-from silvaengine_utility import Utility
+from silvaengine_utility import Utility, convert_decimal_to_number
 
 from .models import BaseModel
 
@@ -35,7 +35,7 @@ class SilvaEngineDynamoDBBase(object):
             if params.get("context"):
                 context = dict(context, **params["context"])
 
-            variables = params.get("variables", {})
+            variables = convert_decimal_to_number(params.get("variables", {}))
             query = params.get("query")
             operation_name = params.get("operation_name")
             response = {
