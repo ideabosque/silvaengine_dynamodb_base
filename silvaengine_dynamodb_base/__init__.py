@@ -2,7 +2,17 @@
 # -*- coding: utf-8 -*-
 __author__ = "bibow"
 
-__all__ = ["main", "models", "types", "decorators"]
+__all__ = [
+    "main",
+    "models",
+    "types",
+    "decorators",
+    "cache_utils",
+    "CacheEntityMeta",
+    "CacheConfigResolvers",
+    "CascadingCachePurger",
+]
+from .cache_utils import CacheConfigResolvers, CascadingCachePurger, CacheEntityMeta
 from .decorators import (
     delete_decorator,
     insert_update_decorator,
