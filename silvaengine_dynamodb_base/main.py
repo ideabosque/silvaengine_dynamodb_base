@@ -5,9 +5,6 @@ from __future__ import print_function
 __author__ = "bibow"
 
 import pendulum
-import pynamodb
-from silvaengine_utility import Utility
-from boto3.dynamodb.conditions import Key
 from typing import Any, Dict, Tuple, List
 from .models import BaseModel, EndpointModel, ConnectionModel, FunctionModel, HookModel, ConfigModel, WSSConnectionModel
 
@@ -182,7 +179,7 @@ class SilvaEngineDynamoDBBase(object):
             raise ValueError(f"Failed to get WSS connections: {str(e)}")
         
     @staticmethod
-    def delete_inactive_wss_connections(endpoint_id: str, cutoff_time: pendulum.DateTime, email: str = None, range_condition: pynamodb.Condition = None) -> None:
+    def delete_inactive_wss_connections(endpoint_id: str, cutoff_time: pendulum.DateTime, email: str = None, range_condition: Any = None) -> None:
         """
         Get all WSS connection models from DynamoDB for a given endpoint.
         :param endpoint_id: The ID of the endpoint.
