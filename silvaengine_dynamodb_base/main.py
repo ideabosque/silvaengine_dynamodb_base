@@ -54,11 +54,7 @@ class SilvaEngineDynamoDBBase(object):
             return {}
         
         try:
-            return [
-                {item.variable: item.value}
-                for item in ConfigModel.query(setting_id)
-            ]
-
+            return {item.variable: item.value for item in ConfigModel.query(setting_id)}
         except Exception as e:
             if isinstance(e, ValueError):
                 raise
