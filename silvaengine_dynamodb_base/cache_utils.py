@@ -52,6 +52,9 @@ class CascadingCachePurger:
     def __init__(self, config: CacheConfigResolvers):
         self._config = config
         self._entity_registry: Dict[str, CacheEntityMeta] = {}
+        self.custom_getter: Optional[str] = None
+        self.custom_list_resolver: Optional[str] = None
+        self.custom_cache_keys: Optional[List[str]] = None
 
     def purge_entity_cascading_cache(
         self,
@@ -61,6 +64,9 @@ class CascadingCachePurger:
         context_keys: Optional[Dict[str, Any]] = None,
         entity_keys: Optional[Dict[str, Any]] = None,
         cascade_depth: int = 3,
+        custom_getter: Optional[str] = None,
+        custom_list_resolver: Optional[str] = None,
+        custom_cache_keys: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Purge entity cache and cascade to related entities.
@@ -72,6 +78,10 @@ class CascadingCachePurger:
             entity_keys: Entity-specific keys for cache resolution
             cascade_depth: Maximum depth for cascading purges
         """
+        self.custom_getter = custom_getter
+        self.custom_list_resolver = custom_list_resolver
+        self.custom_cache_keys = custom_cache_keys
+
         # Merge context_keys into entity_keys for unified resolution
         merged_keys = {}
         if context_keys:
@@ -105,6 +115,9 @@ class CascadingCachePurger:
                         f"Error clearing individual {entity_type} cache: {str(exc)}"
                     )
 
+            if self.custom_getter is not None:
+                return purge_results
+            
             try:
                 list_result = self._clear_entity_list_cache(logger, entity_type)
                 purge_results["list_cache_cleared"] = list_result
@@ -908,13 +921,18 @@ class CascadingCachePurger:
             config_entry = config_map.get(entity_type)
             if not config_entry:
                 return None
+            
+            getter_name = self.custom_getter if self.custom_getter is not None else config_entry.get("getter", f"get_{entity_type}")
+            list_resolver_path = self.custom_list_resolver if self.custom_list_resolver is not None else config_entry.get("list_resolver")
+            cache_keys = self.custom_cache_keys if self.custom_cache_keys is not None else config_entry.get("cache_keys", [])
+
             meta = CacheEntityMeta(
                 entity_type=entity_type,
                 module=config_entry["module"],
                 model_class_name=config_entry.get("model_class"),
-                getter_name=config_entry.get("getter", f"get_{entity_type}"),
-                list_resolver_path=config_entry.get("list_resolver"),
-                cache_keys=config_entry.get("cache_keys", []),
+                getter_name=getter_name,
+                list_resolver_path=list_resolver_path,
+                cache_keys=cache_keys,
             )
             self._entity_registry[entity_type] = meta
 
