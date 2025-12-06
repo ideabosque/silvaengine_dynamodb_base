@@ -20,5 +20,5 @@ from .decorators import (
     resolve_list_decorator,
 )
 from .main import SilvaEngineDynamoDBBase
-from .models import BaseModel
+from .models import BaseModel, RawDataMixin
 from .types import ListObjectType
