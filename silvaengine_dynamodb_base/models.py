@@ -108,15 +108,15 @@ class RawDataMixin:
             dict: Query results
         """
         conn = cls._get_connection()
-        key_condition = f"#{cls._hash_key_name} = :hash_val"
+        key_condition = f"#{cls._hash_keyname} = :hash_val"
         expression_attribute_names = {
-            f'#{cls._hash_key_name}': cls._hash_key_name
+            f'#{cls._hash_keyname}': cls._hash_keyname
         }
         expression_attribute_values = {
             ':hash_val': {cls._hash_key_attribute.attr_type: str(hash_key)}
         }
         
-        if range_key_condition and cls._range_key_name:
+        if range_key_condition and cls._range_keyname:
             key_condition += f" AND {range_key_condition}"
         
         query_kwargs = {
@@ -152,13 +152,13 @@ class RawDataMixin:
     def _build_key(cls, hash_key, range_key=None):
         """Build DynamoDB key"""
         key = {
-            cls._hash_key_name: {
+            cls._hash_keyname: {
                 cls._hash_key_attribute.attr_type: str(hash_key)
             }
         }
         
-        if range_key is not None and cls._range_key_name:
-            key[cls._range_key_name] = {
+        if range_key is not None and cls._range_keyname:
+            key[cls._range_keyname] = {
                 cls._range_key_attribute.attr_type: str(range_key)
             }
         
