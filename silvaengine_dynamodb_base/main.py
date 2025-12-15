@@ -29,7 +29,7 @@ class SilvaEngineDynamoDBBase(object):
                 "logger": self.logger,
                 "setting": self.setting,
                 "endpoint_id": params.get("endpoint_id"),
-                "connectionId": params.get("connection_id"),
+                "connection_id": params.get("connection_id"),
             }
 
             if params.get("context"):
