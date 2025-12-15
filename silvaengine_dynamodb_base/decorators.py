@@ -14,11 +14,11 @@ import uuid
 from deepdiff import DeepDiff
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from silvaengine_utility import Utility
+from silvaengine_utility.serializer import Serializer
 
 extract_data_for_data_diff = (
-    lambda x, data_attributes_except_for_data_diff: Utility.json_loads(
-        Utility.json_dumps(
+    lambda x, data_attributes_except_for_data_diff: Serializer.json_loads(
+        Serializer.json_dumps(
             {
                 k: v
                 for k, v in x.__dict__["attribute_values"].items()
@@ -146,8 +146,8 @@ def insert_update_decorator(
                     new_data = extract_data_for_data_diff(
                         entity, data_attributes_except_for_data_diff
                     )
-                    data_diff = Utility.json_loads(
-                        Utility.json_dumps(
+                    data_diff = Serializer.json_loads(
+                        Serializer.json_dumps(
                             DeepDiff(
                                 old_data,
                                 new_data,
