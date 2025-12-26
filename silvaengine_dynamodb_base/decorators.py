@@ -45,12 +45,10 @@ def monitor_decorator(original_function):
         elif "logger" in parameter_names:
             logger = args[0]
 
-        logger.info(
-            f"Start function: {original_function.__name__} at {time.strftime('%X')}!!"
-        )
+        start = time.perf_counter()
         result = original_function(*args, **kwargs)
         logger.info(
-            f"End function: {original_function.__name__} at {time.strftime('%X')}!!"
+            f"Execute function: {original_function.__name__} spent {time.perf_counter() - start} ms!"
         )
         return result
 
