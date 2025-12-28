@@ -417,9 +417,13 @@ def complete_table_name_decorator(cls: type) -> type:
 
         def _get_resolved_name(self) -> str:
             regional_deployment = bool(Context.get("regional_deployment"))
+            print(
+                f"Regional deployment (`complete_table_name_decorator`): {regional_deployment}"
+            )
 
             if not regional_deployment:
                 endpoint_id = Context.get("endpoint_id")
+                print(f"Endpoint ID (`complete_table_name_decorator`): {endpoint_id}")
 
                 if endpoint_id:
                     return f"{self._original}_{str(endpoint_id).strip().lower()}"
