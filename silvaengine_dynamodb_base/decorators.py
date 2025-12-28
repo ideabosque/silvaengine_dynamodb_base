@@ -346,7 +346,7 @@ def get_total_by_scan(scan, args, attributes_to_get):
     return total
 
 
-def complete_table_name(cls: type) -> type:
+def complete_table_name_decorator(cls: type) -> type:
     """
     Decorator to complete table name based on deployment mode.
 

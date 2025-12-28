@@ -12,8 +12,9 @@ __all__ = [
     "CacheConfigResolvers",
     "CascadingCachePurger",
 ]
-from .cache_utils import CacheConfigResolvers, CascadingCachePurger, CacheEntityMeta
+from .cache_utils import CacheConfigResolvers, CacheEntityMeta, CascadingCachePurger
 from .decorators import (
+    complete_table_name_decorator,
     delete_decorator,
     insert_update_decorator,
     monitor_decorator,
