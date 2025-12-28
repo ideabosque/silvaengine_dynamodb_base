@@ -10,11 +10,11 @@ import math
 import time
 import traceback
 import uuid
+from typing import Any, Optional
 
 from deepdiff import DeepDiff
+from silvaengine_utility import Context, Utility
 from tenacity import retry, stop_after_attempt, wait_exponential
-
-from silvaengine_utility import Utility
 
 extract_data_for_data_diff = (
     lambda x, data_attributes_except_for_data_diff: Utility.json_loads(
@@ -344,3 +344,88 @@ def get_total_by_scan(scan, args, attributes_to_get):
     [entity for entity in total_results]
     total = total_results.total_count
     return total
+
+
+def complete_table_name(cls: type) -> type:
+    """
+    Decorator to complete table name based on deployment mode.
+
+    This decorator modifies the table name of a DynamoDB model class
+    by appending the deployment mode suffix. For example, if the
+    deployment mode is 'development', the table name 'se-configdata'
+    becomes 'se-configdata_development'.
+
+    The table name is resolved dynamically at access time, ensuring
+    it always reflects the current deployment mode.
+
+    Args:
+        cls: The model class to decorate
+
+    Returns:
+        The decorated class with dynamic table name resolution
+    """
+    if not hasattr(cls, "Meta") or not hasattr(cls.Meta, "table_name"):
+        return cls
+
+    original_table_name = cls.Meta.table_name
+
+    if not isinstance(original_table_name, str):
+        return cls
+
+    class DynamicTableName:
+        """
+        Dynamic table name accessor that resolves table name based on deployment mode.
+
+        This class provides both class-level and instance-level access to the
+        table name with proper deployment mode suffix resolution.
+        """
+
+        def __init__(self, original: str):
+            self._original = original
+
+        def __repr__(self) -> str:
+            return self._get_resolved_name()
+
+        def __str__(self) -> str:
+            return self._get_resolved_name()
+
+        def __eq__(self, other: Any) -> bool:
+            if isinstance(other, DynamicTableName):
+                return self._get_resolved_name() == other._get_resolved_name()
+            return self._get_resolved_name() == other
+
+        def __hash__(self) -> int:
+            return hash(self._get_resolved_name())
+
+        def __bool__(self) -> bool:
+            return bool(self._get_resolved_name())
+
+        def __len__(self) -> int:
+            return len(self._get_resolved_name())
+
+        def __getitem__(self, key: Any) -> Any:
+            return self._get_resolved_name()[key]
+
+        def __add__(self, other: Any) -> str:
+            return self._get_resolved_name() + other
+
+        def __radd__(self, other: Any) -> str:
+            return other + self._get_resolved_name()
+
+        def __iter__(self):
+            return iter(self._get_resolved_name())
+
+        def _get_resolved_name(self) -> str:
+            regional_deployment = bool(Context.get("regional_deployment"))
+
+            if not regional_deployment:
+                endpoint_id = Context.get("endpoint_id")
+
+                if endpoint_id:
+                    return f"{self._original}_{str(endpoint_id).strip().lower()}"
+
+            return self._original
+
+    cls.Meta.table_name = DynamicTableName(original_table_name)
+
+    return cls
