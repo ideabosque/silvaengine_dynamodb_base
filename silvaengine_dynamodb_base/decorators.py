@@ -372,7 +372,7 @@ def complete_table_name_decorator(cls: type) -> type:
     if not isinstance(original_table_name, str):
         return cls
 
-    class DynamicTableName:
+    class DynamicTableName(str):
         """
         Dynamic table name accessor that resolves table name based on deployment mode.
 
@@ -381,7 +381,7 @@ def complete_table_name_decorator(cls: type) -> type:
         """
 
         def __init__(self, original: str):
-            self._original = original
+            self._original = str(original).strip()
 
         def __repr__(self) -> str:
             return self._get_resolved_name()
@@ -415,6 +415,15 @@ def complete_table_name_decorator(cls: type) -> type:
         def __iter__(self):
             return iter(self._get_resolved_name())
 
+        def __format__(self, format_spec: str) -> str:
+            return format(self._get_resolved_name(), format_spec)
+
+        def __bytes__(self) -> bytes:
+            return self._get_resolved_name().encode("utf-8")
+
+        def __fspath__(self) -> str:
+            return self._get_resolved_name()
+
         def _get_resolved_name(self) -> str:
             regional_deployment = Context.get("regional_deployment")
             print(
@@ -425,7 +434,7 @@ def complete_table_name_decorator(cls: type) -> type:
                 endpoint_id = Context.get("endpoint_id")
                 print(f"Endpoint ID (`complete_table_name_decorator`): {endpoint_id}")
 
-                if endpoint_id:
+                if endpoint_id is not None:
                     return f"{self._original}_{str(endpoint_id).strip().lower()}"
 
             return self._original
