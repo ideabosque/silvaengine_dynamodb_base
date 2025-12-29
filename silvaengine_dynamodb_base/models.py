@@ -24,16 +24,19 @@ __author__ = "bibow"
 import logging
 import os
 import threading
-from typing import Any, Dict, List, Optional, Type, TypeVar
+from contextlib import contextmanager
+from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
 from pynamodb.attributes import Attribute
-from pynamodb.connection import Connection
-from pynamodb.exceptions import DoesNotExist
+from pynamodb.connection.table import TableConnection
+from pynamodb.exceptions import DoesNotExist, GetError, QueryError, ScanError, PutError
 from pynamodb.models import Model
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound="RawDataMixin")
+
+DYNAMO_ATTRIBUTE_TYPES = {"S", "N", "B", "SS", "NS", "BS", "M", "L", "NULL", "BOOL"}
 
 
 class BaseModel(Model):
@@ -56,6 +59,12 @@ class RawDataMixin:
     overhead of Pynamodb model instantiation. It is useful when you need
     direct access to the raw DynamoDB response data.
 
+    This implementation follows Pynamodb's best practices:
+    - Uses TableConnection for table-specific operations
+    - Implements thread-local connection caching
+    - Provides consistent return types across all operations
+    - Includes comprehensive error handling and logging
+
     Note:
         This mixin must be used with a class that inherits from BaseModel
         and has proper hash_key and range_key attributes defined.
@@ -73,8 +82,143 @@ class RawDataMixin:
         >>> item = result['item']
     """
 
-    _connection: Optional[Connection] = None
+    _connection: Optional[TableConnection] = None
     _connection_lock: threading.Lock = threading.Lock()
+    _thread_local: threading.local = threading.local()
+
+    @classmethod
+    def _get_connection(cls: Type[T]) -> TableConnection:
+        """
+        Get or create a thread-local connection object for DynamoDB.
+
+        This method implements a thread-safe singleton pattern using thread-local
+        storage, following Pynamodb's connection management approach. Each thread
+        maintains its own connection to avoid contention.
+
+        Returns:
+            TableConnection: A Pynamodb TableConnection object
+
+        Note:
+            The connection is stored per-class and per-thread to support
+            both inheritance and thread safety.
+        """
+        thread_local_attr = f"_connection_{cls.__name__}"
+
+        if not hasattr(cls._thread_local, thread_local_attr):
+            with cls._connection_lock:
+                if not hasattr(cls._thread_local, thread_local_attr):
+                    cls._thread_local.__dict__[thread_local_attr] = TableConnection(
+                        table_name=str(cls.Meta.table_name),
+                        region=cls.Meta.region,
+                        host=getattr(cls.Meta, "host", None),
+                        connect_timeout_seconds=getattr(cls.Meta, "connect_timeout_seconds", None),
+                        read_timeout_seconds=getattr(cls.Meta, "read_timeout_seconds", None),
+                        max_retry_attempts=getattr(cls.Meta, "max_retry_attempts", None),
+                        max_pool_connections=getattr(cls.Meta, "max_pool_connections", None),
+                        extra_headers=getattr(cls.Meta, "extra_headers", None),
+                    )
+
+        return cls._thread_local.__dict__[thread_local_attr]
+
+    @classmethod
+    def _get_attribute_metadata(
+        cls: Type[T],
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Retrieve attribute metadata for the model.
+
+        Returns a dictionary mapping attribute names to their metadata,
+        including the attribute type and whether they are hash/range keys.
+
+        Returns:
+            Dict mapping attribute names to metadata dictionaries
+        """
+        if not hasattr(cls, "_attribute_metadata"):
+            metadata = {}
+            for attr_name, attr_obj in cls.get_attributes().items():
+                metadata[attr_name] = {
+                    "attr_type": attr_obj.attr_type,
+                    "is_hash_key": attr_obj.is_hash_key,
+                    "is_range_key": attr_obj.is_range_key,
+                    "attr_name": attr_obj.attr_name,
+                }
+            cls._attribute_metadata = metadata
+        return cls._attribute_metadata
+
+    @classmethod
+    def _serialize_key_value(
+        cls: Type[T],
+        value: Any,
+        attr_type: str,
+    ) -> Dict[str, Any]:
+        """
+        Serialize a value to DynamoDB attribute format.
+
+        Args:
+            value: The value to serialize
+            attr_type: The DynamoDB attribute type (S, N, B, etc.)
+
+        Returns:
+            A dictionary with the serialized value in DynamoDB format
+        """
+        if attr_type == "S":
+            return {"S": str(value)}
+        elif attr_type == "N":
+            return {"N": str(value)}
+        elif attr_type == "B":
+            if isinstance(value, bytes):
+                return {"B": value}
+            return {"B": str(value).encode("utf-8")}
+        elif attr_type == "SS":
+            if isinstance(value, (set, frozenset)):
+                return {"SS": [str(v) for v in value]}
+            return {"SS": [str(v) for v in value]}
+        elif attr_type == "NS":
+            if isinstance(value, (set, frozenset)):
+                return {"NS": [str(v) for v in value]}
+            return {"NS": [str(v) for v in value]}
+        elif attr_type == "BOOL":
+            return {"BOOL": bool(value)}
+        elif attr_type == "NULL":
+            return {"NULL": value is None}
+        else:
+            return {"S": str(value)}
+
+    @classmethod
+    def _build_key(
+        cls: Type[T],
+        hash_key: Any,
+        range_key: Optional[Any] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Build a DynamoDB key dictionary from hash and range keys.
+
+        This method properly serializes key values according to their
+        attribute types, following Pynamodb's attribute serialization patterns.
+
+        Args:
+            hash_key: The hash key value
+            range_key: The range key value (optional)
+
+        Returns:
+            A dictionary representing the DynamoDB key structure
+
+        Example:
+            >>> key = cls._build_key('user-123', 'profile')
+            >>> # Returns: {'id': {'S': 'user-123'}, 'sort_key': {'S': 'profile'}}
+        """
+        attr_metadata = cls._get_attribute_metadata()
+
+        hash_attr_type = attr_metadata.get(cls._hash_keyname, {}).get("attr_type", "S")
+        key: Dict[str, Dict[str, Any]] = {
+            cls._hash_keyname: cls._serialize_key_value(hash_key, hash_attr_type)
+        }
+
+        if range_key is not None and cls._range_keyname is not None:
+            range_attr_type = attr_metadata.get(cls._range_keyname, {}).get("attr_type", "S")
+            key[cls._range_keyname] = cls._serialize_key_value(range_key, range_attr_type)
+
+        return key
 
     @classmethod
     def get_raw(
@@ -102,7 +246,7 @@ class RawDataMixin:
 
         Raises:
             DoesNotExist: If the item with the specified key does not exist
-            ConnectionError: If unable to connect to DynamoDB
+            GetError: If unable to retrieve the item from DynamoDB
             Exception: For other AWS-related errors
 
         Example:
@@ -113,28 +257,30 @@ class RawDataMixin:
         key = cls._build_key(hash_key, range_key)
 
         try:
-            response = conn.client.get_item(
-                TableName=str(cls.Meta.table_name),
-                Key=key,
-                ConsistentRead=consistent_read,
-                ReturnConsumedCapacity="TOTAL",
+            response = conn.get_item(
+                hash_key=hash_key,
+                range_key=range_key,
+                consistent_read=consistent_read,
+                return_consumed_capacity="TOTAL",
             )
 
-            item = response.get("Item")
-            if not item:
+            if "Item" not in response or response["Item"] is None:
                 raise DoesNotExist(f"Item with key {hash_key} does not exist")
 
             return {
-                "item": item,
+                "item": response["Item"],
                 "consumed_capacity": response.get("ConsumedCapacity"),
                 "response_metadata": response.get("ResponseMetadata"),
             }
 
         except DoesNotExist:
             raise
-        except Exception as e:
-            logger.error(f"Error getting raw item: {e}", exc_info=True)
+        except GetError as e:
+            logger.error("Error getting raw item: %s", e, exc_info=True)
             raise
+        except Exception as e:
+            logger.error("Unexpected error getting raw item: %s", e, exc_info=True)
+            raise GetError(f"Failed to get item: {e}") from e
 
     @classmethod
     def scan_raw(
@@ -143,6 +289,11 @@ class RawDataMixin:
         filter_expression: Optional[Any] = None,
         expression_attribute_names: Optional[Dict[str, str]] = None,
         expression_attribute_values: Optional[Dict[str, Any]] = None,
+        index_name: Optional[str] = None,
+        segment: Optional[int] = None,
+        total_segments: Optional[int] = None,
+        exclusive_start_key: Optional[Dict[str, Any]] = None,
+        consistent_read: bool = False,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """
@@ -156,6 +307,11 @@ class RawDataMixin:
             filter_expression: Filter condition for the scan (optional)
             expression_attribute_names: Attribute name mappings (optional)
             expression_attribute_values: Attribute value mappings (optional)
+            index_name: Name of the index to scan (optional)
+            segment: Segment number for parallel scan (optional)
+            total_segments: Total number of segments for parallel scan (optional)
+            exclusive_start_key: Key to start scanning from (optional)
+            consistent_read: Whether to use strongly consistent read (optional)
             **kwargs: Additional parameters passed to the scan operation
 
         Returns:
@@ -173,24 +329,18 @@ class RawDataMixin:
         """
         conn = cls._get_connection()
 
-        scan_kwargs: Dict[str, Any] = {
-            "TableName": str(cls.Meta.table_name),
-            "ReturnConsumedCapacity": "TOTAL",
-        }
-
-        if limit is not None:
-            scan_kwargs["Limit"] = limit
-        if filter_expression is not None:
-            scan_kwargs["FilterExpression"] = filter_expression
-        if expression_attribute_names is not None:
-            scan_kwargs["ExpressionAttributeNames"] = expression_attribute_names
-        if expression_attribute_values is not None:
-            scan_kwargs["ExpressionAttributeValues"] = expression_attribute_values
-
-        scan_kwargs.update(kwargs)
-
         try:
-            response = conn.client.scan(**scan_kwargs)
+            response = conn.scan(
+                filter_condition=filter_expression,
+                limit=limit,
+                return_consumed_capacity="TOTAL",
+                segment=segment,
+                total_segments=total_segments,
+                exclusive_start_key=exclusive_start_key,
+                consistent_read=consistent_read,
+                index_name=index_name,
+                attributes_to_get=expression_attribute_names,
+            )
 
             return {
                 "items": response.get("Items", []),
@@ -200,19 +350,25 @@ class RawDataMixin:
                 "consumed_capacity": response.get("ConsumedCapacity"),
                 "response_metadata": response.get("ResponseMetadata"),
             }
-        except Exception as e:
-            logger.error(f"Error scanning table: {e}", exc_info=True)
+
+        except ScanError as e:
+            logger.error("Error scanning table: %s", e, exc_info=True)
             raise
+        except Exception as e:
+            logger.error("Unexpected error scanning table: %s", e, exc_info=True)
+            raise ScanError(f"Failed to scan table: {e}") from e
 
     @classmethod
     def query_raw(
         cls: Type[T],
         hash_key: Any,
-        range_key_condition: Optional[str] = None,
+        range_key_condition: Optional[Any] = None,
         index_name: Optional[str] = None,
         limit: Optional[int] = None,
         scan_index_forward: Optional[bool] = None,
         filter_expression: Optional[Any] = None,
+        exclusive_start_key: Optional[Dict[str, Any]] = None,
+        consistent_read: bool = False,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """
@@ -228,6 +384,8 @@ class RawDataMixin:
             limit: Maximum number of items to return (optional)
             scan_index_forward: Sort order (True for ascending, False for descending)
             filter_expression: Filter condition for the query (optional)
+            exclusive_start_key: Key to start querying from (optional)
+            consistent_read: Whether to use strongly consistent read (optional)
             **kwargs: Additional parameters passed to the query operation
 
         Returns:
@@ -245,36 +403,18 @@ class RawDataMixin:
         """
         conn = cls._get_connection()
 
-        key_condition = f"#{cls._hash_keyname} = :hash_val"
-        expression_attribute_names = {f"#{cls._hash_keyname}": cls._hash_keyname}
-        expression_attribute_values = {
-            ":hash_val": {cls._hash_key_attribute.attr_type: str(hash_key)}
-        }
-
-        if range_key_condition and cls._range_keyname:
-            key_condition += f" AND {range_key_condition}"
-
-        query_kwargs: Dict[str, Any] = {
-            "TableName": str(cls.Meta.table_name),
-            "KeyConditionExpression": key_condition,
-            "ExpressionAttributeNames": expression_attribute_names,
-            "ExpressionAttributeValues": expression_attribute_values,
-            "ReturnConsumedCapacity": "TOTAL",
-        }
-
-        if index_name is not None:
-            query_kwargs["IndexName"] = index_name
-        if limit is not None:
-            query_kwargs["Limit"] = limit
-        if scan_index_forward is not None:
-            query_kwargs["ScanIndexForward"] = scan_index_forward
-        if filter_expression is not None:
-            query_kwargs["FilterExpression"] = filter_expression
-
-        query_kwargs.update(kwargs)
-
         try:
-            response = conn.client.query(**query_kwargs)
+            response = conn.query(
+                hash_key=hash_key,
+                range_key_condition=range_key_condition,
+                filter_condition=filter_expression,
+                index_name=index_name,
+                limit=limit,
+                scan_index_forward=scan_index_forward,
+                exclusive_start_key=exclusive_start_key,
+                consistent_read=consistent_read,
+                return_consumed_capacity="TOTAL",
+            )
 
             return {
                 "items": response.get("Items", []),
@@ -284,24 +424,31 @@ class RawDataMixin:
                 "consumed_capacity": response.get("ConsumedCapacity"),
                 "response_metadata": response.get("ResponseMetadata"),
             }
-        except Exception as e:
-            logger.error(f"Error querying table: {e}", exc_info=True)
+
+        except QueryError as e:
+            logger.error("Error querying table: %s", e, exc_info=True)
             raise
+        except Exception as e:
+            logger.error("Unexpected error querying table: %s", e, exc_info=True)
+            raise QueryError(f"Failed to query table: {e}") from e
 
     @classmethod
     def batch_get_raw(
         cls: Type[T],
         keys: List[Dict[str, Any]],
         consistent_read: bool = False,
+        return_consumed_capacity: str = "TOTAL",
     ) -> Dict[str, Any]:
         """
         Batch get raw items from DynamoDB.
 
         Retrieves multiple items from DynamoDB in a single batch operation.
+        This method automatically handles pagination for large result sets.
 
         Args:
             keys: List of dictionaries containing hash_key and optionally range_key
             consistent_read: Whether to use strongly consistent read (default: False)
+            return_consumed_capacity: 'TOTAL', 'INDEXES', or 'NONE' (default: 'TOTAL')
 
         Returns:
             A dictionary containing:
@@ -317,89 +464,246 @@ class RawDataMixin:
             ... ]
             >>> result = MyModel.batch_get_raw(keys)
         """
+        if not keys:
+            return {
+                "items": [],
+                "unprocessed_keys": [],
+                "consumed_capacity": None,
+                "response_metadata": None,
+            }
+
         conn = cls._get_connection()
 
-        request_items = {}
-        keys_and_attributes_list = []
-
+        serialized_keys = []
         for key_dict in keys:
             hash_key = key_dict.get("hash_key")
             range_key = key_dict.get("range_key")
             key = cls._build_key(hash_key, range_key)
-            keys_and_attributes_list.append(key)
-
-        request_items[str(cls.Meta.table_name)] = {
-            "Keys": keys_and_attributes_list,
-            "ConsistentRead": consistent_read,
-        }
+            serialized_keys.append(key)
 
         try:
-            response = conn.client.batch_get_item(RequestItems=request_items)
+            response = conn.batch_get_item(
+                keys=serialized_keys,
+                consistent_read=consistent_read,
+                return_consumed_capacity=return_consumed_capacity,
+            )
 
             return {
-                "items": response.get("Responses", {}).get(
-                    str(cls.Meta.table_name), []
-                ),
+                "items": response.get("Responses", {}).get(cls.Meta.table_name, []),
                 "unprocessed_keys": response.get("UnprocessedKeys", []),
                 "consumed_capacity": response.get("ConsumedCapacity"),
                 "response_metadata": response.get("ResponseMetadata"),
             }
+
+        except GetError as e:
+            logger.error("Error in batch get: %s", e, exc_info=True)
+            raise
         except Exception as e:
-            logger.error(f"Error in batch get: {e}", exc_info=True)
+            logger.error("Unexpected error in batch get: %s", e, exc_info=True)
+            raise GetError(f"Failed to batch get items: {e}") from e
+
+    @classmethod
+    @contextmanager
+    def batch_write_raw(
+        cls: Type[T],
+        return_consumed_capacity: str = "TOTAL",
+        return_item_collection_metrics: str = "NONE",
+    ) -> Iterator[Dict[str, Any]]:
+        """
+        Context manager for batch write operations.
+
+        Provides a convenient interface for performing batch write operations
+        with automatic commit on context exit.
+
+        Args:
+            return_consumed_capacity: 'TOTAL', 'INDEXES', or 'NONE'
+            return_item_collection_metrics: 'SIZE' or 'NONE'
+
+        Yields:
+            A dictionary with 'put_items' and 'delete_items' lists
+
+        Example:
+            >>> with MyModel.batch_write_raw() as batch:
+            ...     batch['put_items'].append({'id': {'S': 'new-item'}})
+            ...     batch['delete_items'].append({'id': {'S': 'old-item'}})
+        """
+        conn = cls._get_connection()
+
+        pending = {"put_items": [], "delete_items": []}
+        result = {}
+
+        try:
+            yield pending
+
+            put_items = [item for item in pending["put_items"] if item is not None]
+            delete_items = [item for item in pending["delete_items"] if item is not None]
+
+            if put_items or delete_items:
+                result = conn.batch_write_item(
+                    put_items=put_items,
+                    delete_items=delete_items,
+                    return_consumed_capacity=return_consumed_capacity,
+                    return_item_collection_metrics=return_item_collection_metrics,
+                )
+
+        except Exception as e:
+            logger.error("Error in batch write: %s", e, exc_info=True)
             raise
 
     @classmethod
-    def _get_connection(cls: Type[T]) -> Connection:
-        """
-        Get or create a connection object for DynamoDB.
-
-        This method implements a thread-safe singleton pattern for the
-        connection object to avoid creating multiple connections.
-
-        Args:
-            None
-
-        Returns:
-            Connection: A Pynamodb Connection object
-
-        Note:
-            The connection is stored per-class to support inheritance.
-        """
-        if not hasattr(cls, "_connection") or cls._connection is None:
-            with cls._connection_lock:
-                if not hasattr(cls, "_connection") or cls._connection is None:
-                    cls._connection = Connection(region=cls.Meta.region)
-        return cls._connection
-
-    @classmethod
-    def _build_key(
+    def get_items_batch(
         cls: Type[T],
-        hash_key: Any,
-        range_key: Optional[Any] = None,
-    ) -> Dict[str, Dict[str, str]]:
+        keys: List[Dict[str, Any]],
+        consistent_read: bool = False,
+        chunksize: int = 100,
+    ) -> Iterator[Dict[str, Any]]:
         """
-        Build a DynamoDB key dictionary from hash and range keys.
+        Generator that yields batch get results.
+
+        Automatically handles pagination for large key sets by yielding
+        results in chunks of up to 'chunksize' items.
 
         Args:
-            hash_key: The hash key value
-            range_key: The range key value (optional)
+            keys: List of dictionaries containing hash_key and optionally range_key
+            consistent_read: Whether to use strongly consistent read
+            chunksize: Maximum number of keys per batch (default: 100)
 
-        Returns:
-            A dictionary representing the DynamoDB key structure
+        Yields:
+            Batch result dictionaries containing items and metadata
 
         Example:
-            >>> key = cls._build_key('user-123', 'profile')
-            >>> # Returns: {'id': {'S': 'user-123'}, 'sort_key': {'S': 'profile'}}
+            >>> for batch in MyModel.get_items_batch(large_key_list):
+            ...     for item in batch['items']:
+            ...         process(item)
         """
-        key: Dict[str, Dict[str, str]] = {
-            cls._hash_keyname: {
-                cls._hash_key_attribute.attr_type: str(hash_key)
-            }
-        }
+        conn = cls._get_connection()
 
-        if range_key is not None and cls._range_keyname is not None:
-            key[cls._range_keyname] = {
-                cls._range_key_attribute.attr_type: str(range_key)
-            }
+        for i in range(0, len(keys), chunksize):
+            chunk = keys[i : i + chunksize]
 
-        return key
+            result = cls.batch_get_raw(chunk, consistent_read=consistent_read)
+            yield result
+
+            while result.get("unprocessed_keys"):
+                retry_keys = result["unprocessed_keys"]
+                result = cls.batch_get_raw(retry_keys, consistent_read=consistent_read)
+                yield result
+
+    @classmethod
+    def scan_paginated(
+        cls: Type[T],
+        limit: Optional[int] = None,
+        filter_expression: Optional[Any] = None,
+        segment: Optional[int] = None,
+        total_segments: Optional[int] = None,
+        **kwargs: Any,
+    ) -> Iterator[Dict[str, Any]]:
+        """
+        Generator that yields scan results with automatic pagination.
+
+        Handles pagination automatically by yielding items from all pages
+        until the limit is reached or the scan is complete.
+
+        Args:
+            limit: Maximum total items to return (optional)
+            filter_expression: Filter condition for the scan (optional)
+            segment: Segment number for parallel scan (optional)
+            total_segments: Total number of segments for parallel scan (optional)
+            **kwargs: Additional scan parameters
+
+        Yields:
+            Item dictionaries from the scan results
+
+        Example:
+            >>> for item in MyModel.scan_paginated(limit=1000):
+            ...     process(item)
+        """
+        conn = cls._get_connection()
+
+        exclusive_start_key = None
+        total_count = 0
+
+        while limit is None or total_count < limit:
+            response = conn.scan(
+                filter_condition=filter_expression,
+                limit=limit - total_count if limit else None,
+                exclusive_start_key=exclusive_start_key,
+                segment=segment,
+                total_segments=total_segments,
+                return_consumed_capacity="TOTAL",
+            )
+
+            items = response.get("Items", [])
+            for item in items:
+                if limit and total_count >= limit:
+                    break
+                yield item
+                total_count += 1
+
+            exclusive_start_key = response.get("LastEvaluatedKey")
+            if not exclusive_start_key:
+                break
+
+    @classmethod
+    def query_paginated(
+        cls: Type[T],
+        hash_key: Any,
+        range_key_condition: Optional[Any] = None,
+        index_name: Optional[str] = None,
+        limit: Optional[int] = None,
+        scan_index_forward: Optional[bool] = None,
+        filter_expression: Optional[Any] = None,
+        consistent_read: bool = False,
+        **kwargs: Any,
+    ) -> Iterator[Dict[str, Any]]:
+        """
+        Generator that yields query results with automatic pagination.
+
+        Handles pagination automatically by yielding items from all pages
+        until the limit is reached or the query is complete.
+
+        Args:
+            hash_key: The hash key value for the query
+            range_key_condition: Condition for the range key (optional)
+            index_name: Name of the index to query (optional)
+            limit: Maximum total items to return (optional)
+            scan_index_forward: Sort order (True for ascending, False for descending)
+            filter_expression: Filter condition for the query (optional)
+            consistent_read: Whether to use strongly consistent read
+            **kwargs: Additional query parameters
+
+        Yields:
+            Item dictionaries from the query results
+
+        Example:
+            >>> for item in MyModel.query_paginated('partition-key', limit=100):
+            ...     process(item)
+        """
+        conn = cls._get_connection()
+
+        exclusive_start_key = None
+        total_count = 0
+
+        while limit is None or total_count < limit:
+            response = conn.query(
+                hash_key=hash_key,
+                range_key_condition=range_key_condition,
+                index_name=index_name,
+                limit=limit - total_count if limit else None,
+                scan_index_forward=scan_index_forward,
+                filter_condition=filter_expression,
+                exclusive_start_key=exclusive_start_key,
+                consistent_read=consistent_read,
+                return_consumed_capacity="TOTAL",
+            )
+
+            items = response.get("Items", [])
+            for item in items:
+                if limit and total_count >= limit:
+                    break
+                yield item
+                total_count += 1
+
+            exclusive_start_key = response.get("LastEvaluatedKey")
+            if not exclusive_start_key:
+                break
