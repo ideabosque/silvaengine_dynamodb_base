@@ -29,7 +29,7 @@ from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
 from pynamodb.attributes import Attribute
 from pynamodb.connection.table import TableConnection
-from pynamodb.exceptions import DoesNotExist, GetError, QueryError, ScanError, PutError
+from pynamodb.exceptions import DoesNotExist, GetError, PutError, QueryError, ScanError
 from pynamodb.models import Model
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ class RawDataMixin:
     """
 
     _connection: Optional[TableConnection] = None
-    _connection_lock: threading.Lock = threading.Lock()
+    _connection_lock: threading.RLock = threading.RLock()
     _thread_local: threading.local = threading.local()
 
     @classmethod
@@ -111,10 +111,18 @@ class RawDataMixin:
                         table_name=str(cls.Meta.table_name),
                         region=cls.Meta.region,
                         host=getattr(cls.Meta, "host", None),
-                        connect_timeout_seconds=getattr(cls.Meta, "connect_timeout_seconds", None),
-                        read_timeout_seconds=getattr(cls.Meta, "read_timeout_seconds", None),
-                        max_retry_attempts=getattr(cls.Meta, "max_retry_attempts", None),
-                        max_pool_connections=getattr(cls.Meta, "max_pool_connections", None),
+                        connect_timeout_seconds=getattr(
+                            cls.Meta, "connect_timeout_seconds", None
+                        ),
+                        read_timeout_seconds=getattr(
+                            cls.Meta, "read_timeout_seconds", None
+                        ),
+                        max_retry_attempts=getattr(
+                            cls.Meta, "max_retry_attempts", None
+                        ),
+                        max_pool_connections=getattr(
+                            cls.Meta, "max_pool_connections", None
+                        ),
                         extra_headers=getattr(cls.Meta, "extra_headers", None),
                     )
 
@@ -215,8 +223,12 @@ class RawDataMixin:
         }
 
         if range_key is not None and cls._range_keyname is not None:
-            range_attr_type = attr_metadata.get(cls._range_keyname, {}).get("attr_type", "S")
-            key[cls._range_keyname] = cls._serialize_key_value(range_key, range_attr_type)
+            range_attr_type = attr_metadata.get(cls._range_keyname, {}).get(
+                "attr_type", "S"
+            )
+            key[cls._range_keyname] = cls._serialize_key_value(
+                range_key, range_attr_type
+            )
 
         return key
 
@@ -536,7 +548,9 @@ class RawDataMixin:
             yield pending
 
             put_items = [item for item in pending["put_items"] if item is not None]
-            delete_items = [item for item in pending["delete_items"] if item is not None]
+            delete_items = [
+                item for item in pending["delete_items"] if item is not None
+            ]
 
             if put_items or delete_items:
                 result = conn.batch_write_item(
