@@ -4,6 +4,7 @@ __author__ = "bibow"
 
 __all__ = [
     "main",
+    "model",
     "models",
     "types",
     "decorators",
@@ -11,6 +12,9 @@ __all__ = [
     "CacheEntityMeta",
     "CacheConfigResolvers",
     "CascadingCachePurger",
+    "AnyAttribute",
+    "BaseModel",
+    "SilvaEngineDynamoDBBase",
 ]
 from .cache_utils import CacheConfigResolvers, CacheEntityMeta, CascadingCachePurger
 from .decorators import (
@@ -21,5 +25,13 @@ from .decorators import (
     resolve_list_decorator,
 )
 from .main import SilvaEngineDynamoDBBase
-from .models import BaseModel, RawDataMixin
+from .model import AnyAttribute, BaseModel
+from .models import (
+    ConfigModel,
+    ConnectionModel,
+    EndpointModel,
+    FunctionModel,
+    HookModel,
+    WSSConnectionModel,
+)
 from .types import ListObjectType

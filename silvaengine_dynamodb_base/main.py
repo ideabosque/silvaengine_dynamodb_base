@@ -4,7 +4,7 @@ from __future__ import print_function
 
 __author__ = "bibow"
 
-from .models import BaseModel
+from .model import BaseModel
 
 
 class SilvaEngineDynamoDBBase(object):
