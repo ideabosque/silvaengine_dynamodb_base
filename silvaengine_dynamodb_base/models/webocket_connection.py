@@ -41,7 +41,7 @@ class WSSConnectionModel(BaseModel):
     connect_id_index = ConnectionIdIndex()
 
     @classmethod
-    def create(
+    def store(
         cls,
         endpoint_id: str,
         connection_id: str,
