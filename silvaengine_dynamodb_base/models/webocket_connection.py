@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pendulum
 from pynamodb.attributes import MapAttribute, UnicodeAttribute, UTCDateTimeAttribute
@@ -88,14 +88,23 @@ class WSSConnectionModel(BaseModel):
             raise ValueError(f"Failed to get WSS connection: {str(e)}")
 
     @classmethod
-    def find(cls, connection_id: str) -> ResultIterator["WSSConnectionModel"]:
+    def find(
+        cls,
+        connection_id: str,
+        index_name: Optional[str] = "connect_id_index",
+    ) -> ResultIterator["WSSConnectionModel"]:
         """
         Get all WSS connection models from DynamoDB for a given connection.
         :param connection_id: The ID of the connection.
         :return: A list of WSS connection models.
         """
         try:
-            return WSSConnectionModel.connect_id_index.query(connection_id)
+            index_name = str(index_name).strip() if index_name else ""
+
+            if index_name:
+                return getattr(WSSConnectionModel, index_name).query(connection_id)
+
+            return WSSConnectionModel.query(connection_id)
         except Exception as e:
             raise ValueError(f"Failed to get WSS connections: {str(e)}")
 
