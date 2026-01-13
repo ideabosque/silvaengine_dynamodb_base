@@ -892,7 +892,7 @@ class BaseModel(Model):
         cls,
         boto3_item: Dict[str, Any],
         raise_on_missing: bool = True,
-    ) -> "Model":
+    ) -> "BaseModel":
         """
         Convert a boto3 DynamoDB item to a pynamodb Model instance.
 
@@ -987,7 +987,7 @@ class BaseModel(Model):
         cls,
         boto3_items: List[Dict[str, Any]],
         raise_on_missing: bool = True,
-    ) -> List["Model"]:
+    ) -> List["BaseModel"]:
         """
         Convert a list of boto3 DynamoDB items to pynamodb Model instances.
 
@@ -1038,7 +1038,7 @@ class BaseModel(Model):
     @classmethod
     def model_to_boto3_item(
         cls,
-        model: "Model",
+        model: "BaseModel",
         include_none: bool = False,
         return_python_dict: bool = False,
     ) -> Dict[str, Any]:
@@ -1109,7 +1109,7 @@ class BaseModel(Model):
     @classmethod
     def models_to_boto3_items(
         cls,
-        models: List["Model"],
+        models: List["BaseModel"],
         include_none: bool = False,
         return_python_dict: bool = False,
     ) -> List[Dict[str, Any]]:
@@ -1477,7 +1477,7 @@ class BaseModel(Model):
     @classmethod
     def serialize_model_attribute(
         cls,
-        model: "Model",
+        model: "BaseModel",
         attr_name: str,
     ) -> Dict[str, Any]:
         """

@@ -32,7 +32,7 @@ class ConfigModel(BaseModel):
         setting_id = str(setting_id).strip()
 
         if not setting_id:
-            return []
+            return {} if return_dict else []
 
         try:
             result = cls.query_raw(hash_key=setting_id)
@@ -47,7 +47,17 @@ class ConfigModel(BaseModel):
             if len(items) < 1:
                 return []
             elif return_dict:
-                return cls.boto3_items_to_dict_list(items)
+                result = {}
+                settings = cls.boto3_items_to_dict_list(items)
+
+                if not settings or not isinstance(settings, list):
+                    return result
+
+                for item in settings:
+                    if type(item) is dict and "variable" in item and "value" in item:
+                        result.update({item.get("variable"): item.get("value")})
+
+                return result
 
             return cls.boto3_items_to_models(items)
         except Exception as e:
