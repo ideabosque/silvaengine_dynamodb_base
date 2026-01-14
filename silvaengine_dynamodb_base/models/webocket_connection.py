@@ -9,6 +9,8 @@ from pynamodb.attributes import MapAttribute, UnicodeAttribute, UTCDateTimeAttri
 from pynamodb.indexes import AllProjection, GlobalSecondaryIndex
 from pynamodb.pagination import ResultIterator
 
+from silvaengine_constants import SwitchStatus
+
 from ..model import BaseModel
 
 
@@ -35,7 +37,7 @@ class WSSConnectionModel(BaseModel):
     area = UnicodeAttribute()
     data = MapAttribute(default=dict)
     url_parameters = MapAttribute(default=dict)
-    status = UnicodeAttribute(default="active")
+    status = UnicodeAttribute(default=SwitchStatus.ACTIVE.name)
     created_at = UTCDateTimeAttribute()
     updated_at = UTCDateTimeAttribute()
     connect_id_index = ConnectionIdIndex()
@@ -111,7 +113,7 @@ class WSSConnectionModel(BaseModel):
             raise ValueError(f"Failed to get WSS connections: {str(e)}")
 
     @classmethod
-    def remove(cls, endpoint_id: str, email: str) -> None:
+    def cleanup_connections(cls, endpoint_id: str, expires_in_minutes: int) -> None:
         """
         Get all WSS connection models from DynamoDB for a given endpoint.
         :param endpoint_id: The ID of the endpoint.
@@ -120,21 +122,16 @@ class WSSConnectionModel(BaseModel):
         :return: A list of WSS connection models.
         """
         try:
+            threshold_time = pendulum.now("UTC").subtract(
+                minutes=int(expires_in_minutes)
+            )
             connections = WSSConnectionModel.query(
                 hash_key=endpoint_id,
-                filter_condition=WSSConnectionModel.updated_at
-                < pendulum.now("UTC").subtract(days=1),
+                filter_condition=WSSConnectionModel.updated_at < threshold_time,
             )
 
             # Iterate through and delete matching connections
             for connection in connections:
-                if (
-                    email is not None
-                    and connection.data.__dict__["attribute_values"].get("email")
-                    != email
-                ):
-                    pass
-
                 connection.delete()
         except Exception as e:
             raise ValueError(f"Failed to get WSS connections: {str(e)}")
