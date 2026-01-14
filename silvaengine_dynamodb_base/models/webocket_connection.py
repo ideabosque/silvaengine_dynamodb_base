@@ -60,19 +60,6 @@ class WSSConnectionModel(BaseModel):
         """
         try:
             now = pendulum.now("UTC")
-            print(f"=============================> now: {type(now)} {now}")
-            print(f"=============================> api_key: {type(api_key)} {api_key}")
-            print(
-                f"=============================> url_parameters: {type(url_parameters)} {url_parameters}"
-            )
-            print(f"=============================> area: {type(area)} {area}")
-            print(f"=============================> data: {type(data)} {data}")
-            print(
-                f"=============================> endpoint_id: {type(endpoint_id)} {endpoint_id}"
-            )
-            print(
-                f"=============================> connection_id: {type(connection_id)} {connection_id}"
-            )
 
             return WSSConnectionModel(
                 endpoint_id,
