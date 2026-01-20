@@ -15,9 +15,7 @@ __all__ = [
     "AnyAttribute",
     "BaseModel",
     "SilvaEngineDynamoDBBase",
-    "DoesNotExist",
 ]
-from pynamodb.exceptions import DoesNotExist
 
 from .cache_utils import CacheConfigResolvers, CacheEntityMeta, CascadingCachePurger
 from .decorators import (
@@ -32,6 +30,7 @@ from .model import AnyAttribute, BaseModel
 from .models import (
     ConfigModel,
     ConnectionModel,
+    DoesNotExist,
     EndpointModel,
     FunctionModel,
     HookModel,
