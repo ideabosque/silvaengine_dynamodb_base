@@ -68,16 +68,21 @@ def insert_update_decorator(
     def actual_decorator(original_function):
         @functools.wraps(original_function)
         def wrapper_function(*args, **kwargs):
+            info = kwargs.get("info")
+
+            if not info and len(args) > 0:
+                info = args[0]
+
             try:
                 data_type = get_data_type(
                     original_function, "insert_update_", "_handler"
                 )
 
-                hash_key = kwargs.get(keys["hash_key"]) or args[0].context.get(
+                hash_key = kwargs.get(keys["hash_key"]) or info.context.get(
                     keys["hash_key"]
                 )
                 range_key = kwargs.get(keys["range_key"]) or (
-                    range_key_funct(args[0], **kwargs)
+                    range_key_funct(info, **kwargs)
                     if range_key_funct
                     else f"{uuid.uuid1().int % (10**20):020d}"
                 )
@@ -123,13 +128,13 @@ def insert_update_decorator(
                 ## Original functoin.
                 original_function(*args, **kwargs)
 
-                args[0].context.get("logger").info(log)
+                info.context.get("logger").info(log)
 
                 entity = model_funct(hash_key, range_key)
                 if action == "inserted":
                     if activity_history_funct:
                         activity_history_funct(
-                            args[0],
+                            info,
                             **{
                                 "id": f"{data_type}-{hash_key}-{range_key}",
                                 "log": log,
@@ -138,7 +143,7 @@ def insert_update_decorator(
                             },
                         )
 
-                    return type_funct(args[0], entity)
+                    return type_funct(info, entity)
 
                 if activity_history_funct:
                     new_data = extract_data_for_data_diff(
@@ -156,7 +161,7 @@ def insert_update_decorator(
                     )
                     if data_diff != {}:
                         activity_history_funct(
-                            args[0],
+                            info,
                             **{
                                 "id": f"{data_type}-{hash_key}-{range_key}",
                                 "log": log,
@@ -166,10 +171,10 @@ def insert_update_decorator(
                             },
                         )
 
-                return type_funct(args[0], entity)
+                return type_funct(info, entity)
             except Exception as e:
                 log = traceback.format_exc()
-                args[0].context.get("logger").error(log)
+                info.context.get("logger").error(log)
                 raise e
 
         return wrapper_function
