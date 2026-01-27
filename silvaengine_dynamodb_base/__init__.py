@@ -33,6 +33,7 @@ from .models import (
     DoesNotExist,
     EndpointModel,
     FunctionModel,
+    GraphqlSchemaModel,
     HookModel,
     WSSConnectionModel,
 )

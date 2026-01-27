@@ -6,6 +6,7 @@ from .config import ConfigModel
 from .connection import ConnectionModel
 from .endpoint import EndpointModel
 from .function import FunctionModel
+from .graphql_schema import GraphqlSchemaModel
 from .hook import HookModel
 from .webocket_connection import WSSConnectionModel
 
@@ -17,4 +18,5 @@ __all__ = [
     "FunctionModel",
     "HookModel",
     "WSSConnectionModel",
+    "GraphqlSchemaModel",
 ]
