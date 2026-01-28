@@ -45,18 +45,35 @@ class GraphqlSchemaModel(BaseModel):
             module_name: str,
             enable_preferred_custom_schema: bool = False,
         ) -> str:
-            item = cls.fetch(
+            return cls.get_schema(
                 endpoint_id=endpoint_id,
                 operation_type=operation_type,
                 operation_name=operation_name,
                 module_name=module_name,
+                enable_preferred_custom_schema=enable_preferred_custom_schema,
             )
 
-            if enable_preferred_custom_schema and str(item.custom_schema).strip():
-                return item.custom_schema
-            return item.schema
-
         return _schema_picker
+
+    @classmethod
+    def get_schema(
+        cls,
+        endpoint_id: str,
+        operation_type: str,
+        operation_name: str,
+        module_name: str,
+        enable_preferred_custom_schema: bool = False,
+    ) -> str:
+        item = cls.fetch(
+            endpoint_id=endpoint_id,
+            operation_type=operation_type,
+            operation_name=operation_name,
+            module_name=module_name,
+        )
+
+        if enable_preferred_custom_schema and str(item.custom_schema).strip():
+            return item.custom_schema
+        return item.schema
 
     @classmethod
     def store(
