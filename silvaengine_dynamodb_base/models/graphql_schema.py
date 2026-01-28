@@ -20,6 +20,7 @@ class GraphqlSchemaModel(BaseModel):
     endpoint_id = UnicodeAttribute(hash_key=True)
     operation = UnicodeAttribute(range_key=True)
     schema = UnicodeAttribute()
+    module_name = UnicodeAttribute()
     created_at = UTCDateTimeAttribute()
     updated_at = UTCDateTimeAttribute()
 
@@ -68,6 +69,7 @@ class GraphqlSchemaModel(BaseModel):
                 ),
                 **{
                     "schema": schema.strip(),
+                    "module_name": module_name.strip(),
                     "updated_at": now,
                     "created_at": now,
                 },
