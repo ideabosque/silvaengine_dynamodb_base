@@ -21,6 +21,7 @@ class GraphqlSchemaModel(BaseModel):
     operation = UnicodeAttribute(range_key=True)
     schema = UnicodeAttribute()
     module_name = UnicodeAttribute()
+    custom_schema = UnicodeAttribute(null=True)
     created_at = UTCDateTimeAttribute()
     updated_at = UTCDateTimeAttribute()
 
@@ -102,3 +103,24 @@ class GraphqlSchemaModel(BaseModel):
             )
         except Exception as e:
             raise ValueError(f"Failed to get graphql schema: {str(e)}")
+
+    @classmethod
+    def get_schema(
+        cls,
+        endpoint_id: str,
+        operation_type: str,
+        operation_name: str,
+        module_name: str,
+        enable_preferred_custom_schema: bool = False,
+    ) -> str:
+        item = cls.fetch(
+            endpoint_id=endpoint_id,
+            operation_type=operation_type,
+            operation_name=operation_name,
+            module_name=module_name,
+        )
+
+        if enable_preferred_custom_schema and item.custom_schema:
+            return item.custom_schema
+
+        return item.schema
