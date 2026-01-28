@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
 
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 import pendulum
 from pynamodb.attributes import UnicodeAttribute, UTCDateTimeAttribute
@@ -36,6 +36,27 @@ class GraphqlSchemaModel(BaseModel):
             raise ValueError("Invalid `operation_type` or `operation_name`")
 
         return f"{operation_type.strip().lower()}#{module_name.strip()}#{operation_name.strip()}"
+
+    @classmethod
+    def get_schema_picker(cls, endpoint_id: str) -> Callable:
+        def _schema_picker(
+            operation_type: str,
+            operation_name: str,
+            module_name: str,
+            enable_preferred_custom_schema: bool = False,
+        ) -> str:
+            item = cls.fetch(
+                endpoint_id=endpoint_id,
+                operation_type=operation_type,
+                operation_name=operation_name,
+                module_name=module_name,
+            )
+
+            if enable_preferred_custom_schema and str(item.custom_schema).strip():
+                return item.custom_schema
+            return item.schema
+
+        return _schema_picker
 
     @classmethod
     def store(
@@ -103,24 +124,3 @@ class GraphqlSchemaModel(BaseModel):
             )
         except Exception as e:
             raise ValueError(f"Failed to get graphql schema: {str(e)}")
-
-    @classmethod
-    def get_schema(
-        cls,
-        endpoint_id: str,
-        operation_type: str,
-        operation_name: str,
-        module_name: str,
-        enable_preferred_custom_schema: bool = False,
-    ) -> str:
-        item = cls.fetch(
-            endpoint_id=endpoint_id,
-            operation_type=operation_type,
-            operation_name=operation_name,
-            module_name=module_name,
-        )
-
-        if enable_preferred_custom_schema and item.custom_schema:
-            return item.custom_schema
-
-        return item.schema
