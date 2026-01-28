@@ -20,17 +20,20 @@ class GraphqlSchemaModel(BaseModel):
     endpoint_id = UnicodeAttribute(hash_key=True)
     operation = UnicodeAttribute(range_key=True)
     schema = UnicodeAttribute()
-    module_name = UnicodeAttribute()
-    class_name = UnicodeAttribute()
     created_at = UTCDateTimeAttribute()
     updated_at = UTCDateTimeAttribute()
 
     @classmethod
-    def _build_range_key(cls, operation_type: str, operation_name: str) -> str:
-        if not all([operation_type, operation_name]):
+    def _build_range_key(
+        cls,
+        operation_type: str,
+        operation_name: str,
+        module_name: str,
+    ) -> str:
+        if not all([operation_type, operation_name, module_name]):
             raise ValueError("Invalid `operation_type` or `operation_name`")
 
-        return f"{operation_type.strip().lower()}#{operation_name.strip().lower()}"
+        return f"{operation_type.strip().lower()}#{module_name.strip()}#{operation_name.strip()}"
 
     @classmethod
     def store(
@@ -40,7 +43,6 @@ class GraphqlSchemaModel(BaseModel):
         operation_name: str,
         schema: str,
         module_name: str,
-        class_name: str,
     ) -> Dict[str, Any]:
         """Save a graphql schema model to DynamoDB."""
         try:
@@ -51,7 +53,6 @@ class GraphqlSchemaModel(BaseModel):
                     operation_name,
                     schema,
                     module_name,
-                    class_name,
                 ]
             ):
                 raise ValueError("Invalid arguments")
@@ -60,11 +61,13 @@ class GraphqlSchemaModel(BaseModel):
 
             return GraphqlSchemaModel(
                 endpoint_id.strip().lower(),
-                cls._build_range_key(operation_type, operation_name),
+                cls._build_range_key(
+                    operation_type=operation_type,
+                    operation_name=operation_name,
+                    module_name=module_name,
+                ),
                 **{
                     "schema": schema.strip(),
-                    "module_name": module_name.strip(),
-                    "class_name": class_name.strip(),
                     "updated_at": now,
                     "created_at": now,
                 },
@@ -74,10 +77,14 @@ class GraphqlSchemaModel(BaseModel):
 
     @classmethod
     def fetch(
-        cls, endpoint_id: str, operation_type: str, operation_name: str
+        cls,
+        endpoint_id: str,
+        operation_type: str,
+        operation_name: str,
+        module_name: str,
     ) -> "GraphqlSchemaModel":
         """Get a graphql schema model from DynamoDB."""
-        if not all([endpoint_id, operation_type, operation_name]):
+        if not all([endpoint_id, operation_type, operation_name, module_name]):
             raise ValueError(
                 "Invalid `endpoint_id`, `operation_type` or `operation_name`"
             )
@@ -85,7 +92,11 @@ class GraphqlSchemaModel(BaseModel):
         try:
             return GraphqlSchemaModel.get(
                 hash_key=endpoint_id,
-                range_key=cls._build_range_key(operation_type, operation_name),
+                range_key=cls._build_range_key(
+                    operation_type=operation_type,
+                    operation_name=operation_name,
+                    module_name=module_name,
+                ),
             )
         except Exception as e:
             raise ValueError(f"Failed to get graphql schema: {str(e)}")
