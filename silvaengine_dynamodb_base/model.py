@@ -108,14 +108,10 @@ class BaseModel(Model):
     }
 
     class Meta:
-        region: Optional[str] = os.getenv(
-            "REGION_NAME", os.getenv("REGIONNAME", os.getenv("region_name"))
-        )
-        aws_access_key_id = os.getenv(
-            "AWS_ACCESS_KEY_ID", os.getenv("aws_access_key_id")
-        )
-        aws_secret_access_key = os.getenv(
-            "AWS_SECRET_ACCESS_KEY", os.getenv("aws_secret_access_key")
+        region: Optional[str] = (
+            os.getenv("REGION_NAME")
+            or os.getenv("REGIONNAME")
+            or os.getenv("region_name")
         )
         billing_mode: str = "PAY_PER_REQUEST"
         connect_timeout_seconds = float(os.getenv("CONNECT_TIMEOUT_SECONDS", 10))
