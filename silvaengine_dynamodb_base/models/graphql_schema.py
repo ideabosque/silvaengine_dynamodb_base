@@ -8,6 +8,7 @@ import pendulum
 from pynamodb.attributes import UnicodeAttribute, UTCDateTimeAttribute
 from pynamodb.indexes import AllProjection, GlobalSecondaryIndex
 from pynamodb.pagination import ResultIterator
+
 from silvaengine_constants import SwitchStatus
 
 from ..model import BaseModel
@@ -71,9 +72,12 @@ class GraphqlSchemaModel(BaseModel):
             module_name=module_name,
         )
 
-        if enable_preferred_custom_schema and str(item.custom_schema).strip():
-            return item.custom_schema
-        return item.schema
+        if enable_preferred_custom_schema and item.custom_schema:
+            schema = str(item.custom_schema).strip()
+
+            if schema:
+                return schema
+        return str(item.schema).strip() if item.schema else ""
 
     @classmethod
     def store(
