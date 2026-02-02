@@ -6,6 +6,7 @@ __author__ = "bibow"
 
 import functools
 import inspect
+import logging
 import math
 import time
 import traceback
@@ -48,7 +49,7 @@ def monitor_decorator(original_function):
         start = time.perf_counter()
         result = original_function(*args, **kwargs)
         logger.info(
-            f"Execute function: {original_function.__name__} spent {time.perf_counter() - start} ms!"
+            f"Execute function: {original_function.__name__} spent {time.perf_counter() - start}s!"
         )
         return result
 

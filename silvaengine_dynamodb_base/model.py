@@ -25,6 +25,7 @@ import os
 from contextlib import contextmanager
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar
 
+from graphene import ObjectType as GraphQLObjectType
 from pynamodb.attributes import Attribute
 from pynamodb.constants import BOOLEAN, LIST, MAP, NULL, NUMBER, STRING
 from pynamodb.exceptions import (
@@ -35,7 +36,9 @@ from pynamodb.exceptions import (
     ScanError,
 )
 from pynamodb.models import Model
-from silvaengine_utility.serializer import Serializer
+from silvaengine_utility import Serializer, Utility
+
+from .graphql_type_generator import GraphQLTypeGenerator
 
 T = TypeVar("T", bound="BaseModel")
 
@@ -1823,3 +1826,14 @@ class BaseModel(Model):
             result.append(cls.boto3_item_to_dict(item))
 
         return result
+
+    @classmethod
+    def generate_graphql_type(
+        cls, type_name: Optional[str] = None
+    ) -> GraphQLObjectType:
+        if not type_name:
+            type_name = cls.__name__.removesuffix("Model")
+
+        type_name = Utility.to_camel_case(type_name)
+
+        return GraphQLTypeGenerator().generate_type_from_model(cls, type_name)
