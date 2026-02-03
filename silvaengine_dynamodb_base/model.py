@@ -1827,10 +1827,18 @@ class BaseModel(Model):
 
     @classmethod
     def generate_graphql_type(
-        cls, type_name: Optional[str] = None
+        cls,
+        type_name: Optional[str] = None,
+        remove_auto_type_suffix: Optional[str] = "Model",
     ) -> GraphQLObjectType:
         if not type_name:
-            type_name = cls.__name__.removesuffix("Model")
+            type_name = cls.__name__
+
+            if isinstance(remove_auto_type_suffix, str):
+                remove_auto_type_suffix = str(remove_auto_type_suffix).strip()
+
+                if remove_auto_type_suffix != type_name:
+                    type_name = type_name.removesuffix(remove_auto_type_suffix)
 
         type_name = Utility.to_camel_case(type_name)
 
