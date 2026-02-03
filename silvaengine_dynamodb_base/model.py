@@ -36,9 +36,7 @@ from pynamodb.exceptions import (
     ScanError,
 )
 from pynamodb.models import Model
-from silvaengine_utility import Serializer, Utility
-
-from .graphql_type_generator import GraphQLTypeGenerator
+from silvaengine_utility import GraphQLTypeGenerator, Serializer, Utility
 
 T = TypeVar("T", bound="BaseModel")
 
