@@ -17,8 +17,8 @@ from deepdiff import DeepDiff
 from silvaengine_utility import Context, Serializer, Utility
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-extract_data_for_data_diff = (
-    lambda x, data_attributes_except_for_data_diff: Serializer.json_loads(
+extract_data_for_data_diff = lambda x, data_attributes_except_for_data_diff: (
+    Serializer.json_loads(
         Serializer.json_dumps(
             {
                 k: v
@@ -305,13 +305,21 @@ def results_pagination(
     ## Locate the last_evaluated_key for the specific page.
     last_evaluated_key = None
     info.context.get("logger").info(f"Locate page started at {time.strftime('%X')}.")
+
     if page_number > 1 and page_number <= math.ceil(total / limit):
         kwargs = {"attributes_to_get": attributes_to_get}
+        
         if scan_index_forward is not None:
             kwargs.update({"scan_index_forward": scan_index_forward})
         results = query_scan(
             *args,
             **kwargs,
+        )
+
+        print(
+            ">>>>>>>",
+            hasattr(results, "last_evaluated_key"),
+            getattr(results, "last_evaluated_key"),
         )
 
         for i, entity in enumerate(results):
