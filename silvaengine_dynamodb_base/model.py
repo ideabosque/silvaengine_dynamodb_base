@@ -1830,7 +1830,7 @@ class BaseModel(Model):
         cls,
         type_name: Optional[str] = None,
         remove_auto_type_suffix: Optional[str] = "Model",
-    ) -> GraphQLObjectType:
+    ) -> Type[GraphQLObjectType]:
         if not type_name:
             type_name = cls.__name__
 
