@@ -14,8 +14,9 @@ import uuid
 from typing import Any, Optional
 
 from deepdiff import DeepDiff
-from silvaengine_utility import Context, Serializer, Utility
 from tenacity import retry, stop_after_attempt, wait_exponential
+
+from silvaengine_utility import Context, Serializer, Utility
 
 extract_data_for_data_diff = lambda x, data_attributes_except_for_data_diff: (
     Serializer.json_loads(
@@ -196,6 +197,7 @@ def resolve_list_decorator(
                 data_type = get_data_type(
                     original_function, "resolve_", "_list_handler"
                 )
+
                 if "_list" in data_type:
                     data_type = data_type.replace("_list", "")
 
@@ -216,7 +218,7 @@ def resolve_list_decorator(
                     else:
                         total = count_funct(*inquiry_args)
                         # If no hash key but filters, it will raise exception.
-                except:
+                except Exception:
                     total = get_total_by_scan(
                         inquiry_funct, inquiry_args, attributes_to_get
                     )
@@ -308,13 +310,11 @@ def results_pagination(
 
     if page_number > 1 and page_number <= math.ceil(total / limit):
         kwargs = {"attributes_to_get": attributes_to_get}
-        
+
         if scan_index_forward is not None:
             kwargs.update({"scan_index_forward": scan_index_forward})
-        results = query_scan(
-            *args,
-            **kwargs,
-        )
+
+        results = query_scan(*args, **kwargs)
 
         print(
             ">>>>>>>",
@@ -331,16 +331,15 @@ def results_pagination(
     ## Load the specific page by last_evaluated_key.
     if page_number <= math.ceil(total / limit):
         kwargs = {"last_evaluated_key": last_evaluated_key}
+
         if scan_index_forward is not None:
             kwargs.update({"scan_index_forward": scan_index_forward})
-        results = query_scan(
-            *args,
-            **kwargs,
-        )
+        results = query_scan(*args, **kwargs)
     else:
         return []
 
     entities = []
+
     for i, entity in enumerate(results):
         entities.append(entity)
         if i + 1 == limit:
